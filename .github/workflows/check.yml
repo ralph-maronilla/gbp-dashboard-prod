@@ -1,4 +1,4 @@
-# Type check, lint and a production-dependency security audit on every push, and weekly (new advisories appear even
+# Type check, lint, unit tests and a production-dependency security audit on every push, and weekly (new advisories appear even
 # when the code does not change).
 name: check
 on:
