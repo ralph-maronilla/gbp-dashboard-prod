@@ -1,0 +1,62 @@
+"use client";
+
+import { Suspense, useState, type FormEvent } from "react";
+import { useSearchParams } from "next/navigation";
+import Alert from "@mui/material/Alert";
+import TextField from "@mui/material/TextField";
+import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
+import { AuthCard, AuthForm, fieldIcon } from "@/components/auth-card";
+import { PasswordField } from "@/components/ui/password-field";
+import { useLogin } from "@/lib/client/hooks";
+import { loginSchema } from "@/lib/schemas/auth";
+
+function LoginForm() {
+  const idle = useSearchParams().get("reason") === "idle";
+  const login = useLogin();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
+
+  function onSubmit(e: FormEvent) {
+    e.preventDefault();
+    setFormError(null);
+    const parsed = loginSchema.safeParse({ email, password });
+    if (!parsed.success) return setFormError("Enter a valid email and password.");
+    login.mutate(parsed.data, {
+      // The proxy routes approved users to / and everyone else to /pending-approval.
+      onSuccess: () => window.location.assign("/"),
+    });
+  }
+
+  const error = formError ?? (login.error ? login.error.message : null);
+  return (
+    <AuthCard title="Welcome back" subtitle="Sign in to see your reviews.">
+      {idle && !error && (
+        <Alert severity="info" sx={{ mb: 2.5 }}>
+          You were signed out after 1 hour of inactivity.
+        </Alert>
+      )}
+      <AuthForm
+        error={error}
+        onSubmit={onSubmit}
+        submit={["Sign in", "Signing in…"]}
+        // Stays on until the next page replaces this one, so the form does not flash back after a successful sign-in.
+        pending={login.isPending || login.isSuccess}
+        link={{ prompt: "New here?", href: "/signup", text: "Create an account" }}
+        extra={{ href: "/forgot-password", text: "Forgot your password?" }}
+      >
+        <TextField label="Email" type="email" autoComplete="email" autoFocus slotProps={fieldIcon(<EmailOutlinedIcon fontSize="small" />)} value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <PasswordField label="Password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+      </AuthForm>
+    </AuthCard>
+  );
+}
+
+// useSearchParams needs a Suspense boundary so the page can still be prerendered.
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  );
+}

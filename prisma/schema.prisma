@@ -1,0 +1,186 @@
+// Query-layer mirror of supabase/migrations (the SQL migrations remain the source of truth for
+// the schema, triggers, RLS policies and functions). Verify drift with `npx prisma db pull --print`.
+// Do NOT run `prisma migrate` or `prisma db push` against this database.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  admin
+  manager
+  viewer
+
+  @@map("user_role")
+}
+
+enum UserStatus {
+  pending
+  approved
+  rejected
+
+  @@map("user_status")
+}
+
+// profiles.id references auth.users(id) (separate schema, not modelled here).
+model profiles {
+  id          String     @id @db.Uuid
+  email       String
+  full_name   String?
+  role        UserRole   @default(viewer)
+  status      UserStatus @default(pending)
+  created_at  DateTime   @default(now()) @db.Timestamptz(6)
+  approved_by String?    @db.Uuid
+  approved_at DateTime?  @db.Timestamptz(6)
+  // Heartbeat from the signed-in browser (touch_last_seen): about hourly and on app open.
+  last_seen_at DateTime? @db.Timestamptz(6)
+  last_path    String?
+
+  approver       profiles?            @relation("ProfileApprover", fields: [approved_by], references: [id])
+  approved_users profiles[]           @relation("ProfileApprover")
+  user_locations user_locations[]
+  audit_log      audit_log[]
+  groups_created location_groups[]
+}
+
+model locations {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  gbp_account_id  String
+  gbp_location_id String    @unique
+  name            String
+  address         String?
+  is_active       Boolean   @default(true)
+  first_seen_at   DateTime  @default(now()) @db.Timestamptz(6)
+  last_synced_at  DateTime? @db.Timestamptz(6)
+  removed_at      DateTime? @db.Timestamptz(6)
+  // Admin-set branch code for the CSV export; null falls back to the location name.
+  branch_prefix   String?
+  // Serper extraction: resume token during backfill, when it finished, and Google's own review count.
+  sync_cursor           String?
+  backfill_completed_at DateTime? @db.Timestamptz(6)
+  source_review_count   Int?
+  // Per-location claim so one location is never extracted by two runs at once.
+  sync_locked_until     DateTime? @db.Timestamptz(6)
+  // Dashboard reporting groups (migration 0013).
+  region                String?
+  location_type         String?
+  // Google's public rating, refreshed on demand (total is source_review_count) (migration 0014).
+  google_rating         Decimal?  @db.Decimal(2, 1)
+  google_checked_at     DateTime? @db.Timestamptz(6)
+
+  group_members  location_group_members[]
+  user_locations user_locations[]
+  reviews        reviews[]
+  sync_runs      sync_runs[]
+}
+
+model location_groups {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name       String   @unique
+  created_by String?  @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  creator        profiles?                @relation(fields: [created_by], references: [id])
+  members        location_group_members[]
+  user_locations user_locations[]
+}
+
+model location_group_members {
+  group_id    String @db.Uuid
+  location_id String @db.Uuid
+
+  group    location_groups @relation(fields: [group_id], references: [id], onDelete: Cascade)
+  location locations       @relation(fields: [location_id], references: [id], onDelete: Cascade)
+
+  @@id([group_id, location_id])
+}
+
+// Each row targets exactly one location OR one group (CHECK + unique enforced in SQL).
+model user_locations {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id     String   @db.Uuid
+  location_id String?  @db.Uuid
+  group_id    String?  @db.Uuid
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+
+  user     profiles         @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  location locations?       @relation(fields: [location_id], references: [id], onDelete: Cascade)
+  group    location_groups? @relation(fields: [group_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+}
+
+model reviews {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  location_id   String    @db.Uuid
+  gbp_review_id String    @unique
+  reference_no  Int       @unique(map: "reviews_reference_no_key") @default(dbgenerated("nextval('reviews_reference_no_seq'::regclass)"))
+  reviewer_name String?
+  reviewer_url  String?
+  rating        Int       @db.SmallInt
+  comment       String?
+  create_time   DateTime  @db.Timestamptz(6)
+  update_time   DateTime? @db.Timestamptz(6)
+  reply_comment String?
+  reply_time    DateTime? @db.Timestamptz(6)
+  // When an extraction first saw the reply, and whether reply_time is measured or Serper's relative date (0014).
+  reply_seen_at     DateTime? @db.Timestamptz(6)
+  reply_time_source String?
+  // Hours from the review to the reply; generated by Postgres from reply_time - create_time (0020). Never written.
+  reply_hours       Float?    @db.DoublePrecision
+
+  location locations @relation(fields: [location_id], references: [id])
+
+  @@index([location_id, create_time(sort: Desc)])
+  @@index([location_id, rating])
+}
+
+model sync_runs {
+  id               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  started_at       DateTime  @default(now()) @db.Timestamptz(6)
+  finished_at      DateTime? @db.Timestamptz(6)
+  status           String
+  location_id      String?   @db.Uuid
+  error            String?
+  reviews_upserted Int       @default(0)
+  credits_used     Int       @default(0)
+  // extract | google_refresh (migration 0014)
+  kind             String    @default("extract")
+  // Credits reserved before spending, and who pressed Extract (migration 0017)
+  credits_reserved Int       @default(0)
+  started_by       String?   @db.Uuid
+
+  location locations? @relation(fields: [location_id], references: [id])
+}
+
+// Automatic extraction settings, one row (migration 0018)
+model app_settings {
+  id                        Int       @id @default(1) @db.SmallInt
+  auto_extract_enabled      Boolean   @default(false)
+  auto_extract_time         String    @default("06:00")
+  auto_extract_credit_limit Int       @default(300)
+  auto_last_run_on          DateTime? @db.Date
+  auto_last_run_at          DateTime? @db.Timestamptz(6)
+  scheduler_last_tick_at    DateTime? @db.Timestamptz(6)
+  updated_by                String?   @db.Uuid
+  updated_at                DateTime  @default(now()) @db.Timestamptz(6)
+}
+
+model audit_log {
+  id         BigInt   @id @default(autoincrement())
+  actor_id   String?  @db.Uuid
+  action     String
+  target     String?
+  details    Json?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  actor profiles? @relation(fields: [actor_id], references: [id])
+
+  @@index([created_at(sort: Desc)])
+}
+

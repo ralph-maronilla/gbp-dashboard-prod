@@ -1,0 +1,21 @@
+# Type check, lint and a production-dependency security audit on every push, and weekly (new advisories appear even
+# when the code does not change).
+name: check
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "0 1 * * 1"
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run check
