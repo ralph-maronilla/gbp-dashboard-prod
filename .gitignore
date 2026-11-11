@@ -73,3 +73,6 @@ next-env.d.ts
 *.sql.gz
 *.key
 *.p12
+
+# database backups and dumps (contain user data)
+/backups/
