@@ -1,8 +1,8 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { env } from "@/lib/env";
-import type { ProviderReview } from "@/lib/sync/types";
+import { env } from "@/server/env";
+import type { ProviderReview } from "@/server/sync/types";
 import { MIN_REQUEST_MS, SerperError, SerperTimeBudgetError } from "./errors";
 import type { PlaceKey } from "./maps-input";
 

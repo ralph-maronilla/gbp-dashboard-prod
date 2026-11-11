@@ -1,7 +1,7 @@
-import { withAuth } from "@/lib/api/with-auth";
-import { ok } from "@/lib/api/response";
-import { Errors } from "@/lib/api/errors";
-import { deleteLocation, nameKey, setLocationGroups } from "@/lib/data/locations-admin";
+import { withAuth } from "@/server/api/with-auth";
+import { ok } from "@/server/api/response";
+import { Errors } from "@/server/api/errors";
+import { deleteLocation, nameKey, setLocationGroups } from "@/server/data/locations-admin";
 import { locationIdParamsSchema, updateLocationSchema } from "@/lib/schemas/export";
 import { Prisma } from "@/generated/prisma/client";
 

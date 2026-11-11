@@ -1,10 +1,10 @@
-import { withAuth } from "@/lib/api/with-auth";
-import { ok } from "@/lib/api/response";
-import { Errors } from "@/lib/api/errors";
-import { getPrisma } from "@/lib/db/prisma";
-import { nameKey, uniqueLocationName } from "@/lib/data/locations-admin";
-import { isShortMapsLink, looksLikePlaceId, parseMapsInput } from "@/lib/serper/maps-input";
-import { SERPER_PREFIX } from "@/lib/sync/engine";
+import { withAuth } from "@/server/api/with-auth";
+import { ok } from "@/server/api/response";
+import { Errors } from "@/server/api/errors";
+import { getPrisma } from "@/server/db/prisma";
+import { nameKey, uniqueLocationName } from "@/server/data/locations-admin";
+import { isShortMapsLink, looksLikePlaceId, parseMapsInput } from "@/server/serper/maps-input";
+import { SERPER_PREFIX } from "@/server/sync/engine";
 import { addLocationsSchema, type AddLocationsResult } from "@/lib/schemas/serper";
 import { Prisma } from "@/generated/prisma/client";
 

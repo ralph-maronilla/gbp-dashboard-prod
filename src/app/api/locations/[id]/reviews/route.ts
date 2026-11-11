@@ -1,7 +1,7 @@
-import { withAuth } from "@/lib/api/with-auth";
-import { ok } from "@/lib/api/response";
-import { assertLocationAccess } from "@/lib/api/location-access";
-import { listLocationReviews } from "@/lib/data/location-detail";
+import { withAuth } from "@/server/api/with-auth";
+import { ok } from "@/server/api/response";
+import { assertLocationAccess } from "@/server/api/location-access";
+import { listLocationReviews } from "@/server/data/location-detail";
 import { locationIdParamsSchema, reviewsQuerySchema } from "@/lib/schemas/location-detail";
 
 export const GET = withAuth(

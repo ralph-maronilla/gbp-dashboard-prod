@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { env } from "@/lib/env";
-import { withRls } from "@/lib/db/with-rls";
+import { env } from "@/server/env";
+import { withRls } from "@/server/db/with-rls";
 
 const AUTH_PAGES = ["/login", "/signup", "/forgot-password"];
 /** Reachable without a session: the recovery email link lands here before it has signed anyone in. */

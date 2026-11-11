@@ -1,11 +1,11 @@
 import "server-only";
 import { Prisma } from "@/generated/prisma/client";
-import { Errors } from "@/lib/api/errors";
-import { getPrisma } from "@/lib/db/prisma";
-import type { Tx } from "@/lib/db/with-rls";
-import { env } from "@/lib/env";
+import { Errors } from "@/server/api/errors";
+import { getPrisma } from "@/server/db/prisma";
+import type { Tx } from "@/server/db/with-rls";
+import { env } from "@/server/env";
 import type { AutoExtractInput, AutoExtractStatus } from "@/lib/schemas/auto-extract";
-import { lastRunOnAfterSave, nextRunAt, zonedClock } from "@/lib/sync/schedule";
+import { lastRunOnAfterSave, nextRunAt, zonedClock } from "@/server/sync/schedule";
 
 /** The scheduler calls every 15 minutes; two missed calls in a row means it is not set up (or not working). */
 const CONNECTED_WINDOW_MS = 30 * 60_000;

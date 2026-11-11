@@ -1,10 +1,10 @@
 import "server-only";
 import { Prisma } from "@/generated/prisma/client";
-import { getPrisma } from "@/lib/db/prisma";
-import { env } from "@/lib/env";
-import { fetchReviewPage, type ReviewPage } from "@/lib/serper/client";
-import { MIN_REQUEST_MS, SerperError, SerperTimeBudgetError } from "@/lib/serper/errors";
-import type { PlaceKey } from "@/lib/serper/maps-input";
+import { getPrisma } from "@/server/db/prisma";
+import { env } from "@/server/env";
+import { fetchReviewPage, type ReviewPage } from "@/server/serper/client";
+import { MIN_REQUEST_MS, SerperError, SerperTimeBudgetError } from "@/server/serper/errors";
+import type { PlaceKey } from "@/server/serper/maps-input";
 import type { ProviderReview } from "./types";
 
 /**

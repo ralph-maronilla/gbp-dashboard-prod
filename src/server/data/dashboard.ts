@@ -1,5 +1,5 @@
 import "server-only";
-import type { Tx } from "@/lib/db/with-rls";
+import type { Tx } from "@/server/db/with-rls";
 import type { DashboardData } from "@/lib/schemas/dashboard";
 import { LAST_MONTH, type InsightsQuery } from "@/lib/schemas/insights";
 import { insightScope, monthOf, monthRange } from "./insight-scope";

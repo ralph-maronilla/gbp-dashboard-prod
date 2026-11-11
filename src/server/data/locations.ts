@@ -1,6 +1,6 @@
 import "server-only";
 import { Prisma } from "@/generated/prisma/client";
-import type { Tx } from "@/lib/db/with-rls";
+import type { Tx } from "@/server/db/with-rls";
 import type {
   FailedSync,
   GroupSummary,

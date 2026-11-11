@@ -1,9 +1,9 @@
-import { publicRoute } from "@/lib/api/with-auth";
-import { ok } from "@/lib/api/response";
-import { allowRequest } from "@/lib/api/rate-limit";
+import { publicRoute } from "@/server/api/with-auth";
+import { ok } from "@/server/api/response";
+import { allowRequest } from "@/server/api/rate-limit";
 import { forgotPasswordSchema } from "@/lib/schemas/auth";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { env } from "@/lib/env";
+import { createSupabaseServerClient } from "@/server/supabase/server";
+import { env } from "@/server/env";
 
 /** Emails a recovery link (/auth/callback signs the user in, then /reset-password sets the new password). */
 export const POST = publicRoute(

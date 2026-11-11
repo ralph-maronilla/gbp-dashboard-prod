@@ -46,7 +46,7 @@ next-env.d.ts
 .env
 
 # generated Prisma client
-/generated/prisma
+/src/generated/prisma
 
 # client documents and dev artifacts: keep local, not in the repo
 /data/
@@ -76,3 +76,6 @@ next-env.d.ts
 
 # database backups and dumps (contain user data)
 /backups/
+
+# nested clone created by GitHub Desktop
+/gbp-dashboard-prod/

@@ -1,6 +1,6 @@
-import { withAuth } from "@/lib/api/with-auth";
-import { ok } from "@/lib/api/response";
-import { env } from "@/lib/env";
+import { withAuth } from "@/server/api/with-auth";
+import { ok } from "@/server/api/response";
+import { env } from "@/server/env";
 import { listUsersQuerySchema, type AdminUser } from "@/lib/schemas/admin";
 import type { Prisma } from "@/generated/prisma/client";
 

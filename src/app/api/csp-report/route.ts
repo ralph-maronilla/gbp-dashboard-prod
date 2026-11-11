@@ -1,5 +1,5 @@
 import type { NextRequest } from "next/server";
-import { allowRequest, clientIp } from "@/lib/api/rate-limit";
+import { allowRequest, clientIp } from "@/server/api/rate-limit";
 
 /**
  * Browsers report blocked content here (CSP `report-uri`, see proxy.ts). No session (the browser sends it on its own),

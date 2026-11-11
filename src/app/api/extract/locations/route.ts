@@ -1,6 +1,6 @@
-import { withAuth } from "@/lib/api/with-auth";
-import { ok } from "@/lib/api/response";
-import { getAccessibleLocationIds } from "@/lib/api/location-access";
+import { withAuth } from "@/server/api/with-auth";
+import { ok } from "@/server/api/response";
+import { getAccessibleLocationIds } from "@/server/api/location-access";
 import type { ExtractLocationRow, ExtractState } from "@/lib/schemas/extract";
 
 /** Locations the caller can see, with their client(s) and extraction progress. */

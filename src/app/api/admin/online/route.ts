@@ -1,5 +1,5 @@
-import { withAuth } from "@/lib/api/with-auth";
-import { ok } from "@/lib/api/response";
+import { withAuth } from "@/server/api/with-auth";
+import { ok } from "@/server/api/response";
 import { ACTIVE_WINDOW_MS } from "@/lib/presence";
 import type { OnlineUser } from "@/lib/schemas/admin";
 

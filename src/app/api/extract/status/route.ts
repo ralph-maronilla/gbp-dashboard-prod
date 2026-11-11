@@ -1,7 +1,7 @@
-import { withAuth } from "@/lib/api/with-auth";
-import { ok } from "@/lib/api/response";
-import { env } from "@/lib/env";
-import { creditsUsedToday, latestRun } from "@/lib/sync/engine";
+import { withAuth } from "@/server/api/with-auth";
+import { ok } from "@/server/api/response";
+import { env } from "@/server/env";
+import { creditsUsedToday, latestRun } from "@/server/sync/engine";
 import type { ExtractStatusDto } from "@/lib/schemas/extract";
 
 export const GET = withAuth({ roles: ["admin", "manager"] }, async ({ ctx }) => {

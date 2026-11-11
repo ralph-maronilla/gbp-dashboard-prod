@@ -1,10 +1,10 @@
 import "server-only";
-import { getPrisma } from "@/lib/db/prisma";
-import { env } from "@/lib/env";
+import { getPrisma } from "@/server/db/prisma";
+import { env } from "@/server/env";
 import { detectRegion, typeFromGoogle } from "@/lib/ph-regions";
-import { lookupPlace, type PlaceDetails } from "@/lib/serper/client";
-import { MIN_REQUEST_MS, SerperError } from "@/lib/serper/errors";
-import { limitMessage, placeKeyFromLocationId, reserveCredits, settleCredits } from "@/lib/sync/engine";
+import { lookupPlace, type PlaceDetails } from "@/server/serper/client";
+import { MIN_REQUEST_MS, SerperError } from "@/server/serper/errors";
+import { limitMessage, placeKeyFromLocationId, reserveCredits, settleCredits } from "@/server/sync/engine";
 import { CREDITS_PER_LOOKUP, type GoogleRefreshResult, type GoogleRefreshSummary } from "@/lib/schemas/google-refresh";
 
 const BUDGET_MS = 45_000;

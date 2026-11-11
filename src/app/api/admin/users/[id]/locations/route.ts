@@ -1,6 +1,6 @@
-import { withAuth } from "@/lib/api/with-auth";
-import { ok } from "@/lib/api/response";
-import { Errors } from "@/lib/api/errors";
+import { withAuth } from "@/server/api/with-auth";
+import { ok } from "@/server/api/response";
+import { Errors } from "@/server/api/errors";
 import { setUserLocationsSchema, userIdParamsSchema } from "@/lib/schemas/admin";
 
 export const PUT = withAuth(

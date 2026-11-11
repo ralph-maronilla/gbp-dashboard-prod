@@ -6,7 +6,7 @@ const root = fileURLToPath(new URL(".", import.meta.url));
 
 // Same "@/..." alias as tsconfig.json. `server-only` throws outside a React Server build, so tests get an empty module.
 const alias = {
-  "@": root.replace(/\/$/, ""),
+  "@": root + "src",
   "server-only": fileURLToPath(new URL("./tests/stubs/server-only.ts", import.meta.url)),
 };
 

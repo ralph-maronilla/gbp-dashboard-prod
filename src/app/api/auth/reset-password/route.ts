@@ -1,6 +1,6 @@
-import { withAuth } from "@/lib/api/with-auth";
-import { ok } from "@/lib/api/response";
-import { ApiError, Errors } from "@/lib/api/errors";
+import { withAuth } from "@/server/api/with-auth";
+import { ok } from "@/server/api/response";
+import { ApiError, Errors } from "@/server/api/errors";
 import { RECOVERY_COOKIE } from "@/lib/auth-recovery";
 import { ROLES } from "@/lib/schemas/common";
 import { resetPasswordSchema } from "@/lib/schemas/auth";

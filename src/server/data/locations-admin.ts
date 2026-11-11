@@ -1,7 +1,7 @@
 import "server-only";
-import { Errors } from "@/lib/api/errors";
-import { getPrisma } from "@/lib/db/prisma";
-import type { Tx } from "@/lib/db/with-rls";
+import { Errors } from "@/server/api/errors";
+import { getPrisma } from "@/server/db/prisma";
+import type { Tx } from "@/server/db/with-rls";
 
 /** Same length as the extraction claim (lib/sync/engine.ts), long enough to finish a delete. */
 const DELETE_CLAIM_MS = 2 * 60_000;

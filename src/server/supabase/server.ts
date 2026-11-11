@@ -1,7 +1,7 @@
 import "server-only";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { env } from "@/lib/env";
+import { env } from "@/server/env";
 
 /**
  * User-scoped Supabase client (anon key + the caller's session cookies), so RLS applies.

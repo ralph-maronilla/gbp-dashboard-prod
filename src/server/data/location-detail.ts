@@ -1,7 +1,7 @@
 import "server-only";
 import { Prisma } from "@/generated/prisma/client";
-import type { Tx } from "@/lib/db/with-rls";
-import { ApiError, Errors } from "@/lib/api/errors";
+import type { Tx } from "@/server/db/with-rls";
+import { ApiError, Errors } from "@/server/api/errors";
 import type {
   Granularity,
   LocationDetail,

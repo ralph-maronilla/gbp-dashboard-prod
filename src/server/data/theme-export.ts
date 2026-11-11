@@ -1,6 +1,6 @@
 import "server-only";
-import { Errors } from "@/lib/api/errors";
-import type { Tx } from "@/lib/db/with-rls";
+import { Errors } from "@/server/api/errors";
+import type { Tx } from "@/server/db/with-rls";
 import { formatDateTime } from "@/lib/export/reviews-csv";
 import { classifyCached } from "@/lib/insights/sentiment";
 import { themeWorkbook } from "@/lib/insights/theme-workbook";

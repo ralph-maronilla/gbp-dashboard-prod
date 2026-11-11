@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { env } from "@/lib/env";
+import { createSupabaseServerClient } from "@/server/supabase/server";
+import { env } from "@/server/env";
 import { RECOVERY_COOKIE, RECOVERY_MAX_AGE_SEC } from "@/lib/auth-recovery";
 
 /** Landing page of the recovery email: swaps the one-time code for a session, then asks for the new password. */

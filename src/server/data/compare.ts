@@ -1,6 +1,6 @@
 import "server-only";
 import { Prisma } from "@/generated/prisma/client";
-import type { Tx } from "@/lib/db/with-rls";
+import type { Tx } from "@/server/db/with-rls";
 import type { CompareFigures, CompareInsights, CompareLocation, CompareMonth, CompareQuery } from "@/lib/schemas/insights";
 import { insightScope, monthBounds, monthOf, monthRange } from "./insight-scope";
 

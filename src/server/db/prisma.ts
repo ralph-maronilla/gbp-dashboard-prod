@@ -1,7 +1,7 @@
 import "server-only";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
-import { env } from "@/lib/env";
+import { env } from "@/server/env";
 
 function sslConfig() {
   // Prefer the real Supabase CA (set DATABASE_CA_CERT to the PEM, newlines as \n).

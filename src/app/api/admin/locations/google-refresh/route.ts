@@ -1,10 +1,10 @@
 import { z } from "zod";
-import { withAuth } from "@/lib/api/with-auth";
-import { ok } from "@/lib/api/response";
-import { Errors } from "@/lib/api/errors";
+import { withAuth } from "@/server/api/with-auth";
+import { ok } from "@/server/api/response";
+import { Errors } from "@/server/api/errors";
 import { uuidSchema } from "@/lib/schemas/common";
-import { refreshGoogleTotals } from "@/lib/data/google-refresh";
-import { env } from "@/lib/env";
+import { refreshGoogleTotals } from "@/server/data/google-refresh";
+import { env } from "@/server/env";
 import type { GoogleRefreshSummary } from "@/lib/schemas/google-refresh";
 
 export const maxDuration = 60;

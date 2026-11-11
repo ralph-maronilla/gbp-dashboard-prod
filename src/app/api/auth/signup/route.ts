@@ -1,9 +1,9 @@
-import { publicRoute } from "@/lib/api/with-auth";
-import { ok } from "@/lib/api/response";
+import { publicRoute } from "@/server/api/with-auth";
+import { ok } from "@/server/api/response";
 import { signupSchema } from "@/lib/schemas/auth";
-import { createSupabaseServerClient } from "@/lib/supabase/server";
-import { env } from "@/lib/env";
-import { ApiError } from "@/lib/api/errors";
+import { createSupabaseServerClient } from "@/server/supabase/server";
+import { env } from "@/server/env";
+import { ApiError } from "@/server/api/errors";
 
 export const POST = publicRoute(
   { body: signupSchema, rateLimit: { key: "signup", limit: 5, windowSec: 3600 } },

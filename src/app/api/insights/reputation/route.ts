@@ -1,8 +1,8 @@
-import { withAuth } from "@/lib/api/with-auth";
-import { ok } from "@/lib/api/response";
-import { getAccessibleLocationIds } from "@/lib/api/location-access";
-import { getReputationInsights } from "@/lib/data/insights";
-import { env } from "@/lib/env";
+import { withAuth } from "@/server/api/with-auth";
+import { ok } from "@/server/api/response";
+import { getAccessibleLocationIds } from "@/server/api/location-access";
+import { getReputationInsights } from "@/server/data/insights";
+import { env } from "@/server/env";
 import { groupByQuerySchema } from "@/lib/schemas/insights";
 
 /** Dashboard tab data, limited to the caller's locations (same rules as the reviews table and CSV). */

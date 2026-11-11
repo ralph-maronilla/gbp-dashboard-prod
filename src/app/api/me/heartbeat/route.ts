@@ -1,5 +1,5 @@
-import { withAuth } from "@/lib/api/with-auth";
-import { ok } from "@/lib/api/response";
+import { withAuth } from "@/server/api/with-auth";
+import { ok } from "@/server/api/response";
 import { heartbeatSchema } from "@/lib/schemas/admin";
 import { ROLES } from "@/lib/schemas/common";
 

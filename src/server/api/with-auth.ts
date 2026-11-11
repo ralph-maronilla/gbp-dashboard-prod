@@ -1,9 +1,9 @@
 import "server-only";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { env } from "@/lib/env";
-import { createSupabaseServerClient, type SupabaseServerClient } from "@/lib/supabase/server";
-import { withRls, type Tx } from "@/lib/db/with-rls";
+import { env } from "@/server/env";
+import { createSupabaseServerClient, type SupabaseServerClient } from "@/server/supabase/server";
+import { withRls, type Tx } from "@/server/db/with-rls";
 import { profileSchema, type Profile, type Role } from "@/lib/schemas/common";
 import { ApiError, Errors } from "./errors";
 import { failure } from "./response";

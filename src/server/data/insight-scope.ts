@@ -1,7 +1,7 @@
 import "server-only";
 import { Prisma } from "@/generated/prisma/client";
 import { startOfDayInZone } from "@/lib/export/reviews-csv";
-import type { Tx } from "@/lib/db/with-rls";
+import type { Tx } from "@/server/db/with-rls";
 import { areaOf, PH_REGIONS } from "@/lib/ph-regions";
 import { LAST_MONTH, UNASSIGNED, type GroupBy, type InsightsQuery } from "@/lib/schemas/insights";
 

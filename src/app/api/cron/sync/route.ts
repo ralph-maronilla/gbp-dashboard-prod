@@ -1,11 +1,11 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { NextRequest } from "next/server";
-import { ApiError } from "@/lib/api/errors";
-import { failure, ok } from "@/lib/api/response";
-import { autoCreditsLeft, tickAndClaim } from "@/lib/data/auto-extract";
-import { env } from "@/lib/env";
-import { CHAIN_HEADER, scheduleContinuation } from "@/lib/sync/continue";
-import { NotConfiguredError, runSync } from "@/lib/sync/engine";
+import { ApiError } from "@/server/api/errors";
+import { failure, ok } from "@/server/api/response";
+import { autoCreditsLeft, tickAndClaim } from "@/server/data/auto-extract";
+import { env } from "@/server/env";
+import { CHAIN_HEADER, scheduleContinuation } from "@/server/sync/continue";
+import { NotConfiguredError, runSync } from "@/server/sync/engine";
 
 export const maxDuration = 60;
 

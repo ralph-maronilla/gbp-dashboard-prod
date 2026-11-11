@@ -1,6 +1,6 @@
-import { withAuth } from "@/lib/api/with-auth";
-import { ok } from "@/lib/api/response";
-import { getAutoExtract, saveAutoExtract } from "@/lib/data/auto-extract";
+import { withAuth } from "@/server/api/with-auth";
+import { ok } from "@/server/api/response";
+import { getAutoExtract, saveAutoExtract } from "@/server/data/auto-extract";
 import { autoExtractSchema } from "@/lib/schemas/auto-extract";
 
 /** Admin: automatic extraction settings, next run, last automatic run and whether the scheduler is calling. */
