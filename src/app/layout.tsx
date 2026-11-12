@@ -6,9 +6,16 @@ import { Providers } from "@/components/providers";
 
 const poppins = Poppins({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-sans" });
 
+const DESCRIPTION = "Google Business Profile reviews for every location, in one place.";
+
 export const metadata: Metadata = {
+  // Makes the share-preview image (opengraph-image.png, twitter-image.png) an absolute URL. Unset only in local builds.
+  metadataBase: process.env.APP_URL ? new URL(process.env.APP_URL) : undefined,
   title: "Review Dashboard",
-  description: "Reviews across all connected locations",
+  description: DESCRIPTION,
+  applicationName: "Review Dashboard",
+  openGraph: { title: "Review Dashboard", description: DESCRIPTION, siteName: "Review Dashboard", type: "website" },
+  twitter: { card: "summary_large_image", title: "Review Dashboard", description: DESCRIPTION },
   robots: { index: false, follow: false },
 };
 

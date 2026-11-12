@@ -1,11 +1,7 @@
-import Box from "@mui/material/Box";
-import StarRoundedIcon from "@mui/icons-material/StarRounded";
+import Image from "next/image";
+import logo from "@/assets/logo.png";
 
-/** The app's logo: a white star on a blue circle. */
+/** The app's logo (decorative: the brand name is always written beside it). */
 export function BrandMark({ size = 36 }: { size?: number }) {
-  return (
-    <Box aria-hidden sx={{ width: size, height: size, borderRadius: "50%", bgcolor: "primary.main", display: "grid", placeItems: "center", flexShrink: 0 }}>
-      <StarRoundedIcon sx={{ fontSize: size * 0.62, color: "primary.contrastText" }} />
-    </Box>
-  );
+  return <Image src={logo} alt="" aria-hidden width={size} height={size} priority style={{ flexShrink: 0 }} />;
 }
