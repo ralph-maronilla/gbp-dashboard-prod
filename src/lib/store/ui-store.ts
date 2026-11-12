@@ -39,7 +39,7 @@ export const DEFAULT_OVERVIEW_FILTER: OverviewFilter = {
   sort: "name",
   order: "asc",
   page: 0,
-  pageSize: 25,
+  pageSize: 50,
 };
 
 /** UI state only. Server data lives in React Query. */

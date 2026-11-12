@@ -13,7 +13,7 @@ export type LocationSortField = (typeof LOCATION_SORT_FIELDS)[number];
 
 export const listLocationsQuerySchema = z.object({
   page: z.coerce.number().int().min(0).default(0),
-  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
   sort: z.enum(LOCATION_SORT_FIELDS).default("name"),
   order: z.enum(["asc", "desc"]).default("asc"),
   q: z.string().trim().max(100).optional(),
