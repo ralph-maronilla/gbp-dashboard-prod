@@ -12,7 +12,7 @@ export const PATCH = withAuth(
     rateLimit: { key: "admin", limit: 30, windowSec: 60 },
   },
   async ({ ctx, params, body }) => {
-    // Prevent lock-out: admins cannot change their own role or status.
+    // Prevent lock-out: admins cannot change their own role or status (or extraction access, which admins always have).
     if (params.id === ctx.profile.id) throw Errors.conflict("You cannot change your own role or status");
 
     const data: Prisma.profilesUncheckedUpdateInput =
@@ -20,13 +20,15 @@ export const PATCH = withAuth(
         ? { status: "approved", approved_by: ctx.profile.id, approved_at: new Date() }
         : body.action === "reject"
           ? { status: "rejected", approved_by: null, approved_at: null }
-          : { role: body.role };
+          : body.action === "set_role"
+            ? { role: body.role }
+            : { can_extract: body.value };
 
     // Update and audit entry commit together or not at all.
     const updated = await ctx.db(async (tx) => {
       const before = await tx.profiles.findUnique({
         where: { id: params.id },
-        select: { role: true, status: true },
+        select: { role: true, status: true, can_extract: true },
       });
       if (!before) throw Errors.notFound();
 
@@ -39,14 +41,14 @@ export const PATCH = withAuth(
       const after = await tx.profiles.update({
         where: { id: params.id },
         data,
-        select: { id: true, email: true, full_name: true, role: true, status: true, created_at: true, approved_at: true },
+        select: { id: true, email: true, full_name: true, role: true, status: true, can_extract: true, created_at: true, approved_at: true },
       });
       await tx.audit_log.create({
         data: {
           actor_id: ctx.profile.id,
           action: `user.${body.action}`,
           target: params.id,
-          details: { before, after: { role: after.role, status: after.status } },
+          details: { before, after: { role: after.role, status: after.status, can_extract: after.can_extract } },
         },
       });
       return after;

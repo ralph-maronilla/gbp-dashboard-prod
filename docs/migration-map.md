@@ -166,3 +166,35 @@ Generated from the restructure (baseline c8e61a8). Moves only; no behavior chang
 | `lib/sync/types.ts` | `src/server/sync/types.ts` |
 | `lib/theme.ts` | `src/lib/theme.ts` |
 | `proxy.ts` | `src/proxy.ts` |
+
+## Step 5: auth (Better Auth replaces Supabase Auth)
+
+| Old | New / what happened |
+|---|---|
+| `src/server/supabase/server.ts` | removed; replaced by `src/server/auth/{auth,service,password}.ts` |
+| `src/app/auth/callback/route.ts` (recovery code exchange) | removed; the reset email links straight to `/reset-password?token=…` |
+| `src/lib/auth-recovery.ts` (recovery cookie) | removed; the emailed token replaces it |
+| (Supabase sent the emails) | `src/server/mail/{send,templates}.ts` (Nodemailer over SMTP; dev prints to the log) |
+| (Supabase confirmation link) | `src/app/auth/verify/route.ts` |
+| `src/app/api/auth/{login,signup,logout,forgot,reset-password}/route.ts` | same paths, rewritten on `src/server/auth/service.ts` |
+| `auth.users`, `auth.identities`, `handle_new_user()` | `auth_user`, `auth_session`, `auth_account`, `auth_verification` + `handle_new_user()` trigger (`prisma/migrations/20261112000000_better_auth`) |
+| `src/server/api/with-auth.ts`, `src/proxy.ts` | session lookup via Better Auth; proxy forwards the refreshed session cookie |
+| (new) | `scripts/import-supabase.sh` (production data and accounts, with bcrypt hashes), `tests/db/` and `*.db.test.ts` (run with `npm run test:db`) |
+
+## Steps 6 and 7: removals, health route, browser tests
+
+| Old | New / what happened |
+|---|---|
+| `@supabase/*`, `@upstash/*`, `vercel.json` | removed |
+| `supabase/migrations/*` | moved to `docs/legacy/supabase-migrations/` (reference only) |
+| `src/server/api/rate-limit.ts` (Upstash or in-memory) | rewritten on `rate-limiter-flexible`, in memory; caller address from `X-Real-IP` |
+| (new) | `src/app/api/health/route.ts`, `prisma/migrations/20261112010000_app_settings_row` |
+| (new) | `playwright.config.ts`, `tests/e2e/` (global setup, Serper stand-in, 8 spec files), `.github/workflows/check.yml` e2e job |
+
+## Step 8: deployment
+
+| Old | New / what happened |
+|---|---|
+| Vercel hosting, `vercel.json` | `deploy/` (Caddyfile, `systemd/`, `provision.sh`, `deploy.sh`, `bin/`, `env.production.example`, `RUNBOOK.md`) |
+| Supabase `pg_cron` + `pg_net` + Vault | `deploy/systemd/gbp-dashboard-sync.{service,timer}` |
+| `public/{file,globe,next,vercel,window}.svg` (unused template images) | removed |

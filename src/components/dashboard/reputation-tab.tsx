@@ -12,9 +12,11 @@ import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
 import type { ReactNode } from "react";
 import type { DashboardData } from "@/lib/schemas/dashboard";
 import Chip from "@mui/material/Chip";
-import type { GroupBy, GroupPerformance, ReputationInsights, StatusCard } from "@/lib/schemas/insights";
+import type { GroupBy, GroupPerformance, ReputationInsights, StatusCard, WithCompare } from "@/lib/schemas/insights";
+import { changeBetween, enoughReviews, type Change } from "@/lib/insights/compare";
+import { useCompareLabel, VsChange } from "./change-text";
 import { HELP } from "@/lib/insights/help";
-import { LowRatingChart, MonthlyRatingChart, MonthlyVolumeChart } from "./dashboard-charts";
+import { LowRatingChart, MonthlyRatingChart, MonthlyVolumeChart, type CompareMonths } from "./dashboard-charts";
 import { LabelWithTip } from "./info-tip";
 import { LowRatingList } from "./low-rating-list";
 import { BulletList, SectionCard } from "./section-card";
@@ -38,7 +40,26 @@ const TILE_HELP: Record<StatusCard["key"], string> = {
   escalation: HELP.escalation,
 };
 
-function StatusTile({ card }: { card: StatusCard }) {
+/** A tile's change against the same tile for the Compare-to dates, and the compared value as shown. */
+function tileChange(a: StatusCard, b: StatusCard): { change: Change; was: string } {
+  const v = b.value;
+  switch (a.key) {
+    case "coverage":
+      return { change: changeBetween("count", "up", a.value, v), was: `${v ?? 0} profiles` };
+    case "rating":
+      return { change: changeBetween("stars", "up", a.value, v, enoughReviews(a.reviews, b.reviews)), was: v === null ? "-" : `${v.toFixed(2)}★` };
+    case "response_coverage":
+      return { change: changeBetween("pts", "up", a.value, v, enoughReviews(a.reviews, b.reviews)), was: v === null ? "-" : `${v.toFixed(0)}%` };
+    case "response_speed":
+      // Measured and approximate reply times are not comparable with each other.
+      return { change: changeBetween("days", "down", a.value, v, a.note === b.note && enoughReviews(a.reviews, b.reviews)), was: v === null ? "-" : `${v.toFixed(1)} days` };
+    case "escalation":
+      return { change: changeBetween("count", "down", a.value, v), was: `${v ?? 0}` };
+  }
+}
+
+function StatusTile({ card, compared }: { card: StatusCard; compared?: StatusCard }) {
+  const vs = compared && tileChange(card, compared);
   return (
     <Paper variant="outlined" sx={{ p: 2, height: "100%", display: "flex", flexDirection: "column", gap: 0.75 }}>
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1 }}>
@@ -55,8 +76,21 @@ function StatusTile({ card }: { card: StatusCard }) {
         <Typography variant="caption" color="text.secondary">
           {card.detail}
         </Typography>
+        {vs && <VsChange volume={card.key === "coverage" || card.key === "escalation"} change={vs.change} was={vs.was} />}
       </Box>
     </Paper>
+  );
+}
+
+/** Reviews and rating of a group against the same group in the Compare-to dates (a group with none there counts 0). */
+function GroupChange({ a, b }: { a: GroupPerformance; b: GroupPerformance | undefined }) {
+  const reviews = b?.reviews ?? 0;
+  const rating = b?.avg_rating ?? null;
+  return (
+    <Box sx={{ display: "flex", gap: 1.5, flexWrap: "wrap", fontWeight: 400 }}>
+      <VsChange volume block={false} change={changeBetween("count", "up", a.reviews, reviews)} was={`${reviews.toLocaleString()} reviews`} />
+      <VsChange block={false} change={changeBetween("stars", "up", a.avg_rating, rating, enoughReviews(a.reviews, reviews))} was={rating === null ? "-" : `${rating.toFixed(2)}★`} />
+    </Box>
   );
 }
 
@@ -90,19 +124,26 @@ export function ReputationTab({
   granularity,
   onGranularity,
 }: {
-  data: ReputationInsights;
-  charts: DashboardData | undefined;
+  data: WithCompare<ReputationInsights>;
+  charts: WithCompare<DashboardData> | undefined;
   groupBy: GroupBy;
   onGroupBy: (g: GroupBy) => void;
   granularity: Granularity;
   onGranularity: (g: Granularity) => void;
 }) {
   const per = charts ? ({ month: "month", quarter: "quarter", year: "year" } as const)[charts.granularity] : "month";
+  const b = data.compare?.data;
+  const bCards = new Map((b?.cards ?? []).map((c) => [c.key, c]));
+  const bGroups = new Map((b?.groups ?? []).map((g) => [g.group, g]));
+  // Gated on the page's Compare to (useCompareLabel) so the old second series goes as soon as Compare is turned off.
+  const compareOn = useCompareLabel() !== null;
+  const chartsB: CompareMonths | undefined = compareOn && charts?.compare ? { monthly: charts.compare.data.monthly, label: charts.compare.label } : undefined;
+  const hasCharts = !!charts && (charts.totals.total > 0 || (charts.compare?.data.totals.total ?? 0) > 0);
   return (
     <Grid container spacing={2}>
       {data.cards.map((c) => (
         <Grid key={c.key} size={{ xs: 12, sm: 6, md: 2.4 }}>
-          <StatusTile card={c} />
+          <StatusTile card={c} compared={bCards.get(c.key)} />
         </Grid>
       ))}
 
@@ -126,6 +167,7 @@ export function ReputationTab({
                     <Typography variant="caption" color="text.secondary" sx={{ display: "block" }}>
                       {g.locations} location{g.locations === 1 ? "" : "s"} · {g.reviews.toLocaleString()} reviews{g.avg_rating !== null ? ` · ${g.avg_rating.toFixed(2)}★` : ""}
                     </Typography>
+                    {b && <GroupChange a={g} b={bGroups.get(g.group)} />}
                   </>
                 ),
               },
@@ -149,24 +191,24 @@ export function ReputationTab({
         </SectionCard>
       </Grid>
 
-      {charts && charts.totals.total > 0 && (
+      {charts && hasCharts && (
         <>
           <Grid size={12} sx={{ display: "flex", justifyContent: "flex-end" }}>
             <ToggleSelect label="Chart buckets" value={granularity} options={GRANULARITY_OPTIONS} onChange={onGranularity} />
           </Grid>
           <Grid size={{ xs: 12, md: 6 }}>
             <SectionCard title={`Reviews per ${per}`} info={HELP.volumeChart(per)}>
-              <MonthlyVolumeChart monthly={charts.monthly} />
+              <MonthlyVolumeChart monthly={charts.monthly} compare={chartsB} />
             </SectionCard>
           </Grid>
           <Grid size={{ xs: 12, md: 6 }}>
             <SectionCard title={`Average rating per ${per}`} info={HELP.ratingChart(per)}>
-              <MonthlyRatingChart monthly={charts.monthly} />
+              <MonthlyRatingChart monthly={charts.monthly} compare={chartsB} />
             </SectionCard>
           </Grid>
           <Grid size={{ xs: 12, md: 6 }}>
             <SectionCard title={`1–2★ reviews per ${per}`} info={HELP.lowChart(per)}>
-              <LowRatingChart monthly={charts.monthly} />
+              <LowRatingChart monthly={charts.monthly} compare={chartsB} />
             </SectionCard>
           </Grid>
           <Grid size={{ xs: 12, md: 6 }}>

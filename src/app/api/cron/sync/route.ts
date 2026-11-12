@@ -21,8 +21,8 @@ function authorized(req: NextRequest): boolean {
 }
 
 /**
- * Automatic extraction. Machine route (no user session), so not wrapped in withAuth. The scheduler (Supabase pg_cron,
- * see README) calls it every 15 minutes; a call does nothing until an admin has switched automatic extraction on and
+ * Automatic extraction. Machine route (no user session), so not wrapped in withAuth. The scheduler (a systemd timer
+ * on the server, see deploy/) calls it every 15 minutes; a call does nothing until an admin has switched automatic extraction on and
  * the chosen Manila time has come, then claims the day's run (once a day) and extracts. A large extraction re-invokes
  * this route (CHAIN_HEADER, lib/sync/continue.ts) until done, within the automatic credit limit of the day.
  */

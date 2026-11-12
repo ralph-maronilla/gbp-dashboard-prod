@@ -1,0 +1,40 @@
+[Unit]
+Description=GBP Review Dashboard (Next.js)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gbp
+Group=gbp
+WorkingDirectory=/srv/gbp/current
+EnvironmentFile=/etc/gbp-dashboard/env
+# Listen on localhost only: the only way in is through Caddy, which is what makes X-Real-IP trustworthy.
+Environment=NODE_ENV=production PORT=3000 HOSTNAME=127.0.0.1
+# Keep Node's heap well under the 2 GB of the server, and cap the whole service so a leak restarts it instead of the machine.
+Environment=NODE_OPTIONS=--max-old-space-size=768
+MemoryMax=1300M
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=3
+# Next finishes in-flight requests on SIGTERM.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+LimitNOFILE=65536
+
+# Sandbox: the app can write only to its release folder (Next's cache) and nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/gbp/releases /srv/gbp/shared
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

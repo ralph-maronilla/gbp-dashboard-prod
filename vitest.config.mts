@@ -25,6 +25,19 @@ export default defineConfig({
         },
       },
       {
+        // Row Level Security tests against a real PostgreSQL (the *_test database). Run with `npm run test:db`.
+        extends: true,
+        test: {
+          name: "db",
+          environment: "node",
+          include: ["**/*.db.test.ts"],
+          exclude: ["node_modules/**", ".next/**"],
+          globalSetup: ["./tests/db/global-setup.ts"],
+          fileParallelism: false,
+          testTimeout: 20_000,
+        },
+      },
+      {
         extends: true,
         test: {
           name: "ui",

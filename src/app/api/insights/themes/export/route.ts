@@ -5,12 +5,13 @@ import { env } from "@/server/env";
 import { buildXlsx } from "@/lib/export/xlsx";
 import { themeByKey } from "@/lib/insights/themes";
 import { regionName } from "@/lib/ph-regions";
-import { LAST_MONTH, UNASSIGNED, themeExportQuerySchema, type ThemeExportQuery } from "@/lib/schemas/insights";
+import { resolveInsightPeriod } from "@/server/data/insight-scope";
+import { rangeLabel } from "@/lib/insights/date-ranges";
+import { UNASSIGNED, themeExportQuerySchema, type ThemeExportQuery } from "@/lib/schemas/insights";
 import type { Tx } from "@/server/db/with-rls";
 
 export const maxDuration = 60;
 
-const periodLabel = (m: number) => (m === 0 ? "All time" : m === LAST_MONTH ? "Last month" : `Last ${m} months`);
 
 /** Header lines of the Summary tab: what was exported, with which filters, when. */
 async function about(tx: Tx, query: ThemeExportQuery, timeZone: string): Promise<string[]> {
@@ -27,9 +28,10 @@ async function about(tx: Tx, query: ThemeExportQuery, timeZone: string): Promise
     location && `Location: ${location.name}`,
   ].filter(Boolean);
   const theme = query.theme ? themeByKey.get(query.theme)?.label : null;
+  const { period } = resolveInsightPeriod(query, timeZone);
   const generated = new Date().toLocaleString("en-PH", { timeZone, dateStyle: "medium", timeStyle: "short" });
   return [
-    `Period: ${periodLabel(query.months)}`,
+    `Period: ${period.label}${period.preset && period.range ? ` (${rangeLabel(period.range)})` : ""}`,
     `Filters: ${filters.length > 0 ? filters.join(" · ") : "none (all locations you can see)"}`,
     ...(theme
       ? [`Theme: ${theme}${query.sentiment !== "all" ? ` · ${query.sentiment[0]!.toUpperCase()}${query.sentiment.slice(1)} mentions only (location tabs)` : ""}${query.q ? ` · Search: "${query.q}"` : ""}`]

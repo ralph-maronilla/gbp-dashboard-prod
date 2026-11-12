@@ -19,12 +19,16 @@ import { useAutoExtract, useSaveAutoExtract } from "@/lib/client/hooks";
 import { formatRelative } from "@/lib/format";
 import type { AutoExtractInput, AutoExtractStatus } from "@/lib/schemas/auto-extract";
 
+/** "06:15" as "6:15 AM". */
+export const timeLabel = (hhmm: string) => {
+  const [h, m] = hhmm.split(":").map(Number) as [number, number];
+  return `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
+};
+
 /** 00:00, 00:15, … 23:45, labelled "6:00 AM". */
 const TIMES: Option[] = Array.from({ length: 96 }, (_, i) => {
-  const h = Math.floor(i / 4);
-  const m = (i % 4) * 15;
-  const value = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-  return { value, label: `${h % 12 || 12}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}` };
+  const value = `${String(Math.floor(i / 4)).padStart(2, "0")}:${String((i % 4) * 15).padStart(2, "0")}`;
+  return { value, label: timeLabel(value) };
 });
 
 const STATUS: Record<string, string> = { completed: "Completed", partial: "Partly done", failed: "Failed", running: "Running" };
@@ -110,8 +114,8 @@ function Form({ data }: { data: AutoExtractStatus }) {
       {data.enabled && !data.scheduler_connected && (
         <Alert severity="warning">
           The scheduler has not called the app in the last 30 minutes
-          {data.scheduler_last_tick_at ? ` (last call ${formatRelative(data.scheduler_last_tick_at)})` : ""}, so nothing will run. Finish the
-          Supabase setup in the README (pg_cron job) and check CRON_SECRET and APP_URL in Vercel.
+          {data.scheduler_last_tick_at ? ` (last call ${formatRelative(data.scheduler_last_tick_at)})` : ""}, so nothing will run. Check that the
+          scheduler timer is running on the server and that CRON_SECRET and APP_URL are set (see the README).
         </Alert>
       )}
     </Stack>

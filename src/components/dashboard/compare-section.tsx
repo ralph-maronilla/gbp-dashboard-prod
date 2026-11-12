@@ -7,7 +7,6 @@ import MuiLink from "@mui/material/Link";
 import Paper from "@mui/material/Paper";
 import Typography from "@mui/material/Typography";
 import { DataTable, type Column, type SortState } from "@/components/ui/data-table";
-import type { Option } from "@/components/ui/select-field";
 import { COMPARE_COLORS, CompareBarChart } from "@/components/ui/simple-charts";
 import { ToggleSelect } from "@/components/ui/toggle-select";
 import { changeOf, formatValue, MEASURES, valueOf, type Change, type Measure } from "@/lib/insights/compare";
@@ -16,23 +15,11 @@ import { COMPARE } from "@/lib/insights/signals";
 import type { CompareInsights, CompareLocation } from "@/lib/schemas/insights";
 import { LabelWithTip } from "./info-tip";
 import { SectionCard } from "./section-card";
-import { toneColor } from "./signal";
+import { ChangeText } from "./change-text";
 
 const MEASURE_HELP: Record<Measure, string> = { reviews: HELP.compareReviews, rating: HELP.compareRating, reply: HELP.compareReply, low: HELP.compareLow };
-const TONE = { better: "success", worse: "error", same: "neutral", none: "neutral" } as const;
 const MEASURE_OPTIONS = MEASURES.map((m) => ({ value: m.key, label: m.short }));
 const shortName = (name: string) => name.replace(/^Healthway\s*-?\s*/i, "");
-
-/** "▲ +0.80★" in green when better, red when worse; the arrow follows the number, the colour follows the meaning. */
-function ChangeText({ change }: { change: Change }) {
-  const arrow = change.delta === null || change.delta === 0 ? "" : change.delta > 0 ? "▲ " : "▼ ";
-  return (
-    <Typography component="span" variant="body2" sx={{ fontWeight: 600, whiteSpace: "nowrap", color: (t) => toneColor(t, TONE[change.direction]) }}>
-      {arrow}
-      {change.text}
-    </Typography>
-  );
-}
 
 function ChangeCard({ measure, data }: { measure: (typeof MEASURES)[number]; data: CompareInsights }) {
   const [a, b] = [data.network.a, data.network.b];
@@ -52,12 +39,8 @@ function ChangeCard({ measure, data }: { measure: (typeof MEASURES)[number]; dat
   );
 }
 
-/** The months either picker can choose: every month with data except the one picked in the other field. */
-export const compareMonthOptions = (data: CompareInsights | undefined, other: string): Option[] =>
-  (data?.available_months ?? []).filter((m) => m.month !== other).map((m) => ({ value: m.month, label: m.label + (m.partial ? " (so far)" : "") }));
-
 /**
- * Two calendar months side by side, under the Review Overview when "Compare months" is ticked (the months are picked in
+ * Two date ranges side by side, under the Review Overview when "Compare" is ticked (the ranges are picked in
  * the Dashboard filters): network cards, a per-location bar chart for one measure, and a table of all four.
  */
 export function CompareSection({ data }: { data: CompareInsights }) {
@@ -75,7 +58,7 @@ export function CompareSection({ data }: { data: CompareInsights }) {
     });
   }, [data.locations, sort]);
 
-  // Chart rows: largest figure in the chosen month first, locations without one last.
+  // Chart rows: largest figure in the first range first, locations without one last.
   const chartRows = useMemo(
     () => [...data.locations].sort((x, y) => (valueOf(y.a, measure) ?? -1) - (valueOf(x.a, measure) ?? -1) || x.name.localeCompare(y.name)),
     [data.locations, measure],
@@ -115,17 +98,24 @@ export function CompareSection({ data }: { data: CompareInsights }) {
   ];
 
   const empty = data.network.a.reviews === 0 && data.network.b.reviews === 0;
-  const partial = [data.a, data.b].filter((m) => m.partial).map((m) => m.label);
+  const partial = [data.a, data.b].filter((r) => r.partial).map((r) => r.label);
+  const unequal = data.a.days !== data.b.days;
+  const days = (n: number) => `${n} day${n === 1 ? "" : "s"}`;
 
   return (
     <Grid container spacing={2}>
       <Grid size={12}>
         <Typography variant="h6" component="h2">
-          <LabelWithTip label={`Month comparison: ${data.a.label} vs ${data.b.label}`} text={HELP.compareMonths} />
+          <LabelWithTip label={`Comparison: ${data.a.label} vs ${data.b.label}`} text={HELP.compareMonths} />
         </Typography>
         {partial.length > 0 && (
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
-            {partial.join(" and ")} {partial.length === 1 ? "is" : "are"} the current month and not finished, so its review volume is not comparable. Ratings and rates still are.
+            {partial.join(" and ")} {partial.length === 1 ? "includes" : "include"} today, which is not finished, so review volume is not fully comparable. Ratings and rates still are.
+          </Typography>
+        )}
+        {unequal && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5 }}>
+            The ranges have different lengths ({days(data.a.days)} vs {days(data.b.days)}), so review volume is not directly comparable. Ratings and rates still are.
           </Typography>
         )}
       </Grid>
@@ -138,7 +128,7 @@ export function CompareSection({ data }: { data: CompareInsights }) {
 
       {empty ? (
         <Grid size={12}>
-          <Typography color="text.secondary">No reviews in either month for these filters. Pick other months or widen the filters.</Typography>
+          <Typography color="text.secondary">No reviews in either range for these filters. Pick other dates or widen the filters.</Typography>
         </Grid>
       ) : (
         <>
@@ -166,7 +156,7 @@ export function CompareSection({ data }: { data: CompareInsights }) {
               />
               <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
                 Each cell shows {data.a.label}, then {data.b.label} after “vs”, then the change. A change shows - when a location has fewer than {COMPARE.MIN_REVIEWS} reviews in either
-                month. Click a heading to sort by change.
+                range. Click a heading to sort by change.
               </Typography>
             </SectionCard>
           </Grid>

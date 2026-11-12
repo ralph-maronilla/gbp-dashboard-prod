@@ -22,7 +22,7 @@ export function scheduleContinuation(summary: SyncSummary, chain: number, origin
     }
     try {
       // Fire and forget: the next run executes in its own invocation; we only wait long enough to hand it off.
-      await fetch(`${env.appUrl ?? origin}/api/cron/sync`, {
+      await fetch(`${env.internalAppUrl ?? env.appUrl ?? origin}/api/cron/sync`, {
         headers: { Authorization: `Bearer ${env.cronSecret}`, [CHAIN_HEADER]: String(chain + 1) },
         cache: "no-store",
         signal: AbortSignal.timeout(3_000),

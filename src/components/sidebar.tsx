@@ -14,6 +14,8 @@ import DashboardOutlinedIcon from "@mui/icons-material/DashboardOutlined";
 import InsightsOutlinedIcon from "@mui/icons-material/InsightsOutlined";
 import CloudDownloadOutlinedIcon from "@mui/icons-material/CloudDownloadOutlined";
 import PeopleOutlinedIcon from "@mui/icons-material/PeopleOutlined";
+import HelpOutlineOutlinedIcon from "@mui/icons-material/HelpOutlineOutlined";
+import Divider from "@mui/material/Divider";
 import type { Role } from "@/lib/schemas/common";
 
 export const SIDEBAR_WIDTH = 240;
@@ -33,21 +35,36 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Users", href: "/admin/users", icon: <PeopleOutlinedIcon />, roles: ["admin"] },
 ];
 
-function NavList({ role, onNavigate }: { role?: Role; onNavigate?: () => void }) {
+const GUIDE: NavItem = { label: "User guide", href: "/guide", icon: <HelpOutlineOutlinedIcon /> };
+
+function NavLink({ item, onNavigate, tour }: { item: NavItem; onNavigate?: () => void; tour?: string }) {
   const pathname = usePathname();
+  const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+  return (
+    <ListItemButton component={Link} href={item.href} selected={active} onClick={onNavigate} data-tour={tour}>
+      <ListItemIcon>{item.icon}</ListItemIcon>
+      <ListItemText primary={item.label} slotProps={{ primary: { sx: { fontWeight: 500, fontSize: "0.875rem" } } }} />
+    </ListItemButton>
+  );
+}
+
+/** The pages, then the User guide at the bottom of the sidebar. */
+function NavList({ role, onNavigate }: { role?: Role; onNavigate?: () => void }) {
   const items = NAV_ITEMS.filter((i) => !i.roles || (role && i.roles.includes(role)));
   return (
-    <List sx={{ px: 1.5, py: 2, display: "flex", flexDirection: "column", gap: 0.25 }}>
-      {items.map((item) => {
-        const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
-        return (
-          <ListItemButton key={item.href} component={Link} href={item.href} selected={active} onClick={onNavigate}>
-            <ListItemIcon>{item.icon}</ListItemIcon>
-            <ListItemText primary={item.label} slotProps={{ primary: { sx: { fontWeight: 500, fontSize: "0.875rem" } } }} />
-          </ListItemButton>
-        );
-      })}
-    </List>
+    <Box sx={{ display: "flex", flexDirection: "column", flexGrow: 1, minHeight: 0 }}>
+      <List data-tour="nav" sx={{ px: 1.5, py: 2, display: "flex", flexDirection: "column", gap: 0.25 }}>
+        {items.map((item) => (
+          <NavLink key={item.href} item={item} onNavigate={onNavigate} tour={item.href === "/admin/users" ? "nav-users" : undefined} />
+        ))}
+      </List>
+      <Box sx={{ mt: "auto" }}>
+        <Divider />
+        <List sx={{ px: 1.5, py: 1.5 }}>
+          <NavLink item={GUIDE} onNavigate={onNavigate} tour="guide" />
+        </List>
+      </Box>
+    </Box>
   );
 }
 
@@ -58,17 +75,19 @@ interface SidebarProps {
   /** Mobile: temporary drawer open/closed. */
   mobileOpen: boolean;
   onMobileClose: () => void;
+  /** Phone drawer keeps keyboard focus inside it; off while the tour's card (outside the drawer) needs it. */
+  trapFocus?: boolean;
 }
 
-export function Sidebar({ role, desktopOpen, mobileOpen, onMobileClose }: SidebarProps) {
+export function Sidebar({ role, desktopOpen, mobileOpen, onMobileClose, trapFocus = true }: SidebarProps) {
   return (
     <>
       <Drawer
         variant="temporary"
         open={mobileOpen}
         onClose={onMobileClose}
-        ModalProps={{ keepMounted: true }}
-        sx={{ display: { xs: "block", md: "none" }, "& .MuiDrawer-paper": { width: SIDEBAR_WIDTH } }}
+        ModalProps={{ keepMounted: true, disableEnforceFocus: !trapFocus }}
+        sx={{ display: { xs: "block", md: "none" }, "& .MuiDrawer-paper": { width: SIDEBAR_WIDTH, display: "flex", flexDirection: "column" } }}
       >
         <Toolbar />
         <NavList role={role} onNavigate={onMobileClose} />
@@ -85,7 +104,7 @@ export function Sidebar({ role, desktopOpen, mobileOpen, onMobileClose }: Sideba
         }}
       >
         <Toolbar />
-        <Box sx={{ overflow: "auto" }}>
+        <Box sx={{ overflow: "auto", flexGrow: 1, display: "flex", flexDirection: "column" }}>
           <NavList role={role} />
         </Box>
       </Drawer>

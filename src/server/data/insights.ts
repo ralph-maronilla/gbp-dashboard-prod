@@ -34,7 +34,6 @@ import type {
   ThemeReviewsQuery,
   ThemeStat,
 } from "@/lib/schemas/insights";
-import { LAST_MONTH } from "@/lib/schemas/insights";
 import { AREA_ORDER, regionName, SEGMENT_ORDER } from "@/lib/ph-regions";
 import { groupColumn, insightScope, periodJoin, type InsightScope } from "./insight-scope";
 
@@ -48,6 +47,7 @@ function responseSpeedCard(
   measured: number,
   measuredSince: Date | null,
   approxDays: number | null,
+  replies: number,
   timeZone: string,
   now = new Date(),
 ): StatusCard {
@@ -56,7 +56,7 @@ function responseSpeedCard(
   // every reply Google dates "a day ago" as measured, and a 1-2 day window holds mostly quick replies to new reviews.
   const spanDays = measuredSince ? (now.getTime() - measuredSince.getTime()) / 86_400_000 : 0;
   if (measuredDays !== null && measured >= MIN_MEASURED_REPLIES && spanDays >= MIN_MEASURED_SPAN_DAYS) {
-    return { key: "response_speed", title: "Response Speed", signal: responseSpeed(measuredDays), note: "measured", detail: `About ${days(measuredDays)} to reply (median of ${measured} measured replies)` };
+    return { key: "response_speed", title: "Response Speed", signal: responseSpeed(measuredDays), note: "measured", detail: `About ${days(measuredDays)} to reply (median of ${measured} measured replies)`, value: measuredDays, reviews: measured };
   }
   const since = measuredSince ? measuredSince.toLocaleDateString("en-PH", { day: "numeric", month: "short", timeZone }) : null;
   return {
@@ -64,6 +64,8 @@ function responseSpeedCard(
     title: "Response Speed",
     signal: responseSpeed(approxDays),
     note: "approx.",
+    value: approxDays,
+    reviews: replies,
     detail:
       approxDays === null
         ? "No replies yet"
@@ -179,7 +181,7 @@ export async function getReputationInsights(tx: Tx, visibleIds: string[] | null,
   const sc = insightScope(visibleIds, query, timeZone);
   const col = await groupColumn(tx, query.group_by);
   const join = periodJoin(sc);
-  // Attention and Escalation look at the last 30 days, or at the whole month for LAST_MONTH.
+  // Attention and Escalation look at the last 30 days, or at the whole period when it ended before today.
   const since30 = sc.to && sc.from ? Prisma.sql`${sc.from}::timestamptz` : Prisma.sql`now() - interval '30 days'`;
 
   const [groupRows, totals, comparison] = !sc.any
@@ -232,8 +234,8 @@ export async function getReputationInsights(tx: Tx, visibleIds: string[] | null,
         reviews: g.reviews,
         avg_rating: g.reviews > 0 ? g.avg_rating : null,
         health: ratingSignal(g.reviews > 0 ? g.avg_rating : null),
-        // Reviews per location per month: over the last 90 days, or over the one month of LAST_MONTH.
-        activity: activitySignal(g.locations > 0 ? (sc.to ? g.reviews : g.recent90 / 3) / g.locations : null),
+        // Reviews per location per month: over the last 90 days, or over the whole period when it ended before today.
+        activity: activitySignal(g.locations > 0 ? (sc.lengthMonths ? g.reviews / sc.lengthMonths : g.recent90 / 3) / g.locations : null),
         response: responseStatus(reply),
         attention: attentionLevel(pct(g.low30, g.recent30)),
       };
@@ -247,7 +249,7 @@ export async function getReputationInsights(tx: Tx, visibleIds: string[] | null,
   const covered = t?.profiles_with_reviews ?? 0;
   const median = t?.median_reply_days ?? null;
   const escalations = t?.escalations ?? 0;
-  const window = sc.to ? "in that month" : "in the last 30 days";
+  const window = sc.to ? (sc.lengthMonths === 1 && sc.period.preset === "last_month" ? "in that month" : "in that period") : "in the last 30 days";
   const cards: StatusCard[] = [
     {
       key: "coverage",
@@ -256,15 +258,19 @@ export async function getReputationInsights(tx: Tx, visibleIds: string[] | null,
       detail:
         `${covered} of ${profiles} profiles have reviews in this period` +
         ((t?.not_extracted ?? 0) > 0 ? `; ${t?.not_extracted} not extracted yet` : ""),
+      value: covered,
+      reviews,
     },
-    { key: "rating", title: "Rating Health", signal: ratingSignal(t?.avg_rating ?? null), detail: t?.avg_rating ? `${t.avg_rating.toFixed(2)}★ across ${reviews.toLocaleString("en-US")} reviews` : "No reviews" },
-    { key: "response_coverage", title: "Response Coverage", signal: responseCoverage(replyPct), detail: replyPct === null ? "No reviews" : `${replyPct.toFixed(0)}% of reviews have an owner reply` },
-    responseSpeedCard(t?.median_measured_days ?? null, t?.measured_replies ?? 0, t?.measured_since ?? null, median, timeZone),
+    { key: "rating", title: "Rating Health", signal: ratingSignal(t?.avg_rating ?? null), detail: t?.avg_rating ? `${t.avg_rating.toFixed(2)}★ across ${reviews.toLocaleString("en-US")} reviews` : "No reviews", value: t?.avg_rating ?? null, reviews },
+    { key: "response_coverage", title: "Response Coverage", signal: responseCoverage(replyPct), detail: replyPct === null ? "No reviews" : `${replyPct.toFixed(0)}% of reviews have an owner reply`, value: replyPct, reviews },
+    responseSpeedCard(t?.median_measured_days ?? null, t?.measured_replies ?? 0, t?.measured_since ?? null, median, t?.replied ?? 0, timeZone),
     {
       key: "escalation",
       title: "Escalation Watch",
       signal: escalations > 0 ? { label: "Active Monitoring", tone: "warning" } : { label: "Clear", tone: "success" },
       detail: escalations > 0 ? `${escalations} unreplied 1-2★ review${escalations === 1 ? "" : "s"} ${window}` : `No unreplied 1-2★ reviews ${window}`,
+      value: escalations,
+      reviews,
     },
   ];
   const groupWord = query.group_by === "type" || query.group_by === "segment" ? "type" : "region";
@@ -278,8 +284,10 @@ export async function getReputationInsights(tx: Tx, visibleIds: string[] | null,
  */
 async function comparePeriods(tx: Tx, sc: InsightScope, col: Prisma.Sql, query: GroupByQuery): Promise<PeriodComparison | null> {
   if (!sc.prev || !sc.from) return null;
-  const window = Prisma.sql`and r.create_time >= ${sc.prev.from} ${sc.to ? Prisma.sql`and r.create_time < ${sc.to}` : Prisma.empty}`;
-  const p = Prisma.sql`case when r.create_time >= ${sc.from} then 'cur' else 'prev' end`;
+  // The period and the comparison period need not touch (same dates last year, custom dates): count each on its own.
+  const inCur = Prisma.sql`r.create_time >= ${sc.from} ${sc.to ? Prisma.sql`and r.create_time < ${sc.to}` : Prisma.empty}`;
+  const window = Prisma.sql`and ((${inCur}) or (r.create_time >= ${sc.prev.from} and r.create_time < ${sc.prev.to}))`;
+  const p = Prisma.sql`case when ${inCur} then 'cur' else 'prev' end`;
   const observed = Prisma.sql`r.reply_time_source = 'observed' and r.reply_time >= r.create_time`;
   const [figures, texts] = await Promise.all([
     tx.$queryRaw<{ grp: string | null; p: "cur" | "prev"; reviews: number; stars: number; replied: number; measured: number; median_days: number | null }[]>`
@@ -321,9 +329,8 @@ async function comparePeriods(tx: Tx, sc: InsightScope, col: Prisma.Sql, query: 
     network[k].rating = avg(netStars[k], network[k].reviews);
     network[k].replyPct = pct(netReplied[k], network[k].reviews);
   }
-  const months = query.months === LAST_MONTH ? 1 : query.months;
   return {
-    previous: months === 1 ? "the month before" : `the previous ${months} months`,
+    previous: sc.prevLabel ?? "the previous period",
     network,
     groups: [...groups].map(([grp, g]) => ({
       group: groupLabel(query.group_by, grp),

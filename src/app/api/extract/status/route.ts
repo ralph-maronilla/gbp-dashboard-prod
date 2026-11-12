@@ -3,8 +3,11 @@ import { ok } from "@/server/api/response";
 import { env } from "@/server/env";
 import { creditsUsedToday, latestRun } from "@/server/sync/engine";
 import type { ExtractStatusDto } from "@/lib/schemas/extract";
+import { Errors } from "@/server/api/errors";
+import { canExtract } from "@/lib/schemas/common";
 
-export const GET = withAuth({ roles: ["admin", "manager"] }, async ({ ctx }) => {
+export const GET = withAuth({ roles: ["admin", "manager", "viewer"] }, async ({ ctx }) => {
+  if (!canExtract(ctx.profile)) throw Errors.forbidden();
   const [run, credits, mine] = await Promise.all([latestRun(), creditsUsedToday(), creditsUsedToday(ctx.profile.id)]);
   const status: ExtractStatusDto = {
     configured: Boolean(env.serperApiKey),

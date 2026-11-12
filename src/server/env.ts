@@ -10,19 +10,37 @@ function required(name: string): string {
 }
 
 export const env = {
-  get supabaseUrl() {
-    return required("NEXT_PUBLIC_SUPABASE_URL");
-  },
-  /** Publishable key (new name) or legacy anon key; both are safe to use with RLS. */
-  get supabaseAnonKey() {
-    return (
-      process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
-      required("NEXT_PUBLIC_SUPABASE_ANON_KEY")
-    );
-  },
-  /** Pooled Postgres connection string (Supabase "Transaction pooler"). Server-only. */
+  /** PostgreSQL connection string for the app (the managed Lightsail database in production). Server-only. */
   get databaseUrl() {
     return required("DATABASE_URL");
+  },
+  /** Connections the app may hold open. One long-running server, so a modest fixed pool; keep it under the database's limit. */
+  get dbPoolMax() {
+    return clampInt(process.env.DATABASE_POOL_MAX, 10, 1, 100);
+  },
+  /** Signs session cookies and one-time tokens. 32+ random characters (`openssl rand -base64 32`). Server-only. */
+  get authSecret() {
+    const value = required("BETTER_AUTH_SECRET");
+    if (value.length < 32) throw new Error("BETTER_AUTH_SECRET must be at least 32 characters");
+    return value;
+  },
+  /** Outgoing mail (SMTP). Without SMTP_HOST, development prints emails to the server log; production refuses to run. */
+  get smtp() {
+    const host = process.env.SMTP_HOST || undefined;
+    const port = clampInt(process.env.SMTP_PORT, 587, 1, 65535);
+    return {
+      host,
+      port,
+      // Port 465 is implicit TLS; 587 upgrades with STARTTLS (nodemailer does that on its own when offered).
+      secure: process.env.SMTP_SECURE ? process.env.SMTP_SECURE === "true" : port === 465,
+      user: process.env.SMTP_USER || undefined,
+      pass: process.env.SMTP_PASS || undefined,
+      from: process.env.SMTP_FROM || "GBP Review Dashboard <no-reply@localhost>",
+    };
+  },
+  /** Where the server can reach itself (for automatic extraction to continue itself). Defaults to APP_URL. */
+  get internalAppUrl(): string | undefined {
+    return process.env.INTERNAL_APP_URL?.replace(/\/$/, "") || undefined;
   },
   /** Canonical origin of this app, used for the CSRF Origin check and email redirects. */
   get appUrl(): string | undefined {
@@ -34,7 +52,7 @@ export const env = {
   get isProd() {
     return process.env.NODE_ENV === "production";
   },
-  /** Bearer secret Vercel Cron sends to /api/cron/sync. */
+  /** Bearer secret the scheduler (the systemd timer) sends to /api/cron/sync. */
   get cronSecret() {
     return process.env.CRON_SECRET || undefined;
   },
@@ -51,6 +69,10 @@ export const env = {
   /** Serper (google.serper.dev) key: the source of all review data. */
   get serperApiKey() {
     return process.env.SERPER_API_KEY || undefined;
+  },
+  /** Serper's API origin. Only tests change it (to a local stub, so no credits are spent). */
+  get serperBaseUrl() {
+    return (process.env.SERPER_BASE_URL || "https://google.serper.dev").replace(/\/$/, "");
   },
   /** Country / language Serper searches as (affects place matching and relative dates). */
   get serperGl() {

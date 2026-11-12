@@ -1,0 +1,23 @@
+# Caddy terminates HTTPS (it gets and renews the certificate by itself) and hands requests to the app on localhost.
+# provision.sh replaces APP_DOMAIN_PLACEHOLDER with your domain.
+APP_DOMAIN_PLACEHOLDER {
+	encode zstd gzip
+
+	reverse_proxy 127.0.0.1:3000 {
+		# The app trusts X-Real-IP for rate limiting. Setting it here OVERWRITES whatever the client sent, so it cannot be forged.
+		header_up X-Real-IP {remote_host}
+		header_up X-Forwarded-For {remote_host}
+		# Send responses as they are produced (CSV and Excel downloads).
+		flush_interval -1
+	}
+
+	# Nothing in this app takes a large upload; the biggest request is a pasted list of Maps links.
+	request_body {
+		max_size 2MB
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

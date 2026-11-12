@@ -1,8 +1,16 @@
 import "server-only";
 import type { Tx } from "@/server/db/with-rls";
 import type { DashboardData } from "@/lib/schemas/dashboard";
-import { LAST_MONTH, type InsightsQuery } from "@/lib/schemas/insights";
-import { insightScope, monthOf, monthRange } from "./insight-scope";
+import { addMonths } from "@/lib/insights/date-ranges";
+import type { InsightsQuery } from "@/lib/schemas/insights";
+import { insightScope, monthOf } from "./insight-scope";
+
+/** Every month "YYYY-MM" from `from`'s month to `to`'s month (days "YYYY-MM-DD"), oldest first. */
+function monthsBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  for (let d = `${from.slice(0, 7)}-01`; d.slice(0, 7) <= to.slice(0, 7); d = addMonths(d, 1)) out.push(d.slice(0, 7));
+  return out;
+}
 
 /** Locations need at least this many reviews in range to be ranked best/worst. */
 const MIN_REVIEWS_TO_RANK = 10;
@@ -38,24 +46,20 @@ const BUCKET_SQL: Record<Bucket, { unit: string; format: string }> = {
 export async function getDashboard(tx: Tx, visibleIds: string[] | null, query: InsightsQuery, timeZone: string, now = new Date()): Promise<DashboardData> {
   const sc = insightScope(visibleIds, query, timeZone, now);
   const scope = sc.review;
-  let months =
-    query.months > 0 ? monthRange(now, query.months, timeZone) : query.months === LAST_MONTH ? monthRange(now, 2, timeZone).slice(0, 1) : [monthOf(now, timeZone)];
-  if (query.months === 0 && sc.any) {
-    // All time: from the oldest review in scope; every review is counted.
+  // The chart covers the period's months; all time runs from the oldest review in scope to this month.
+  const range = sc.period.range;
+  let months = range ? monthsBetween(range.from, range.to) : [monthOf(now, timeZone)];
+  if (!range && sc.any) {
     const [first] = await tx.$queryRaw<{ oldest: Date | null }[]>`
       select min(r.create_time) as oldest from public.reviews r join public.locations l on l.id = r.location_id where ${scope}`;
-    if (first?.oldest) {
-      const [fy, fm] = monthOf(first.oldest, timeZone).split("-").map(Number) as [number, number];
-      const [ny, nm] = monthOf(now, timeZone).split("-").map(Number) as [number, number];
-      months = monthRange(now, (ny - fy) * 12 + (nm - fm) + 1, timeZone);
-    }
+    if (first?.oldest) months = monthsBetween(`${monthOf(first.oldest, timeZone)}-01`, `${monthOf(now, timeZone)}-01`);
   }
   const bucket = pickBucket(months.length, query.granularity);
   const buckets = [...new Set(months.map((m) => bucketOf(m, bucket)))];
   const { unit, format } = BUCKET_SQL[bucket];
 
   const empty: DashboardData = {
-    months: query.months,
+    period: sc.period.label,
     totals: { total: 0, avg_rating: null, positive_pct: null, negative_pct: null, reply_pct: null },
     granularity: bucket,
     monthly: buckets.map((month) => ({ month, total: 0, avg_rating: null, low: 0 })),
@@ -111,7 +115,7 @@ export async function getDashboard(tx: Tx, visibleIds: string[] | null, query: I
   const ranked = [...perLocation].sort((a, b) => b.avg_rating - a.avg_rating || b.total - a.total || a.name.localeCompare(b.name));
 
   return {
-    months: query.months,
+    period: sc.period.label,
     granularity: bucket,
     totals: { total, avg_rating: t?.avg_rating ?? null, positive_pct: pct(t?.positive), negative_pct: pct(t?.negative), reply_pct: pct(t?.replied) },
     monthly: buckets.map((month) => {

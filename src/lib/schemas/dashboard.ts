@@ -23,7 +23,8 @@ export interface DashboardLowReview {
 }
 
 export interface DashboardData {
-  months: number;
+  /** "All time", "Last 12 months" or "Oct 14 – Nov 10, 2026". */
+  period: string;
   granularity: "month" | "quarter" | "year";
   totals: {
     total: number;

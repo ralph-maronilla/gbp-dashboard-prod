@@ -45,13 +45,14 @@ const EMPTY_SELECTION: GridRowSelectionModel = { type: "include", ids: new Set()
 
 interface Props {
   role: Role;
+  /** Admins, and users an admin allowed to run manual extractions. */
+  canExtract: boolean;
   /** Clicking a location's review count shows its reviews below. */
   onShowReviews: (locationId: string) => void;
 }
 
-export function LocationsPanel({ role, onShowReviews }: Props) {
+export function LocationsPanel({ role, canExtract, onShowReviews }: Props) {
   const isAdmin = role === "admin";
-  const canExtract = role === "admin" || role === "manager";
   const { progress, start, stop } = useExtractionRunner();
   const locations = useExtractLocations(progress.running ? 3_000 : false);
   const groups = useGroups();
@@ -215,7 +216,7 @@ export function LocationsPanel({ role, onShowReviews }: Props) {
 
       {canExtract && (
         <Stack spacing={1.5} sx={{ mb: 2 }}>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} data-tour="extract">
             {progress.running ? (
               <Button color="warning" variant="contained" startIcon={<StopIcon />} onClick={stop}>
                 Stop

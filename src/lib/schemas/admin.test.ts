@@ -45,7 +45,7 @@ describe("heartbeatSchema", () => {
 
 describe("profileSchema", () => {
   it("accepts only known roles and statuses", () => {
-    const ok = { id: ID, email: "a@b.co", full_name: null, role: "viewer", status: "pending" };
+    const ok = { id: ID, email: "a@b.co", full_name: null, role: "viewer", status: "pending", can_extract: false };
     expect(profileSchema.safeParse(ok).success).toBe(true);
     expect(profileSchema.safeParse({ ...ok, role: "root" }).success).toBe(false);
     expect(profileSchema.safeParse({ ...ok, status: "banned" }).success).toBe(false);

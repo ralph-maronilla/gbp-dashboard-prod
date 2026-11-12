@@ -6,11 +6,22 @@ import type { Theme } from "@mui/material/styles";
 import { axisSx, CHART_MARGIN } from "@/lib/chart";
 import { BRAND, chartAccent } from "@/lib/design-tokens";
 
-/** Bars of one series: vertical by default, horizontal (labels down the side) with `horizontal`. */
+/** A second series drawn against the first (Dashboard Compare to): same positions, its own name and colour. */
+export interface CompareSeries {
+  name: string;
+  values: (number | null)[];
+  color?: string;
+}
+
+/**
+ * Bars of one series: vertical by default, horizontal (labels down the side) with `horizontal`. With `compare`, a second
+ * bar per label and a legend.
+ */
 export function CountBarChart({
   labels,
   values,
   name,
+  compare,
   color = chartAccent,
   horizontal,
   labelWidth,
@@ -19,8 +30,9 @@ export function CountBarChart({
   margin = CHART_MARGIN,
 }: {
   labels: string[];
-  values: number[];
+  values: (number | null)[];
   name: string;
+  compare?: CompareSeries;
   color?: string;
   horizontal?: boolean;
   labelWidth?: number;
@@ -30,8 +42,11 @@ export function CountBarChart({
 }) {
   const common = {
     height,
-    series: [{ data: values, label: name, color }],
-    hideLegend: true as const,
+    series: [
+      { data: values, label: name, color },
+      ...(compare ? [{ data: compare.values, label: compare.name, color: compare.color ?? COMPARE_COLORS[1] }] : []),
+    ],
+    hideLegend: !compare,
     margin,
     sx: (t: Theme) => ({ ...axisSx(t), "& .MuiBarElement-root": { rx: radius } }),
   };
@@ -42,27 +57,43 @@ export function CountBarChart({
   );
 }
 
-/** Average rating (1–5) over time as a filled line; gaps (null) are bridged. */
-export function RatingLineChart({ labels, values, fill = 0.1, stroke = 2 }: { labels: string[]; values: (number | null)[]; fill?: number; stroke?: number }) {
+/** Average rating (1–5) over time as a filled line; gaps (null) are bridged. `compare` adds a dashed line and a legend. */
+export function RatingLineChart({
+  labels,
+  values,
+  compare,
+  name = "Average rating",
+  fill = 0.1,
+  stroke = 2,
+}: {
+  labels: string[];
+  values: (number | null)[];
+  compare?: CompareSeries;
+  name?: string;
+  fill?: number;
+  stroke?: number;
+}) {
+  const format = (v: number | null) => (v === null ? "No reviews" : v.toFixed(2));
   return (
     <LineChart
       height={280}
       xAxis={[{ scaleType: "point", data: labels }]}
       yAxis={[{ min: 1, max: 5, width: 36 }]}
       series={[
-        {
-          data: values,
-          label: "Average rating",
-          connectNulls: true,
-          color: chartAccent,
-          area: true,
-          showMark: false,
-          valueFormatter: (v) => (v === null ? "No reviews" : v.toFixed(2)),
-        },
+        { id: "a", data: values, label: name, connectNulls: true, color: chartAccent, area: !compare, showMark: false, valueFormatter: format },
+        ...(compare
+          ? [{ id: "b", data: compare.values, label: compare.name, connectNulls: true, color: compare.color ?? COMPARE_COLORS[1], showMark: false, valueFormatter: format }]
+          : []),
       ]}
-      hideLegend
+      hideLegend={!compare}
       margin={CHART_MARGIN}
-      sx={(t) => ({ ...axisSx(t), "& .MuiAreaElement-root": { fillOpacity: fill }, "& .MuiLineElement-root": { strokeWidth: stroke } })}
+      sx={(t) => ({
+        ...axisSx(t),
+        // Class names of MUI X Charts 9 (MuiLineChart-*) and older (Mui*Element-root).
+        "& .MuiAreaElement-root, & .MuiLineChart-area": { fillOpacity: fill },
+        "& .MuiLineElement-root, & .MuiLineChart-line": { strokeWidth: stroke },
+        "& [data-series=\"b\"].MuiLineChart-line, & [data-series=\"b\"].MuiLineElement-root": { strokeDasharray: "6 4" },
+      })}
     />
   );
 }

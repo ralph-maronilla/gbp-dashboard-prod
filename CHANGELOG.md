@@ -1,5 +1,26 @@
 # Changelog
 
+## Self-hosted rewrite (no Supabase, Upstash or Vercel at runtime)
+Same app and behavior, new foundation: one server (Caddy + Node under systemd) and a managed PostgreSQL.
+- **Sign-in:** Better Auth runs inside the app on its own tables (`auth_user`, `auth_session`, `auth_account`, `auth_verification`); bcrypt passwords, so existing accounts keep their passwords. Email through SMTP (Nodemailer); in development the emails are printed to the log.
+- **Changed behavior (approved):**
+  - The password-reset email now links straight to `/reset-password?token=…` (no sign-in first). Resetting revokes every session; the user signs in again with the new password.
+  - The "choose a password you have not used before" rule is gone.
+  - Sessions last 7 days and extend as they are used, plus the existing 1-hour idle sign-out in the browser.
+  - Rate-limit counters live in memory and reset when the server restarts (limits and windows are unchanged).
+  - New `GET /api/health` for deploy checks and monitoring.
+  - Passwords longer than 72 bytes are refused (bcrypt would silently cut them).
+  - A confirmation email is now always required before the first sign-in (it already was in production).
+- **Database:** Prisma Migrate replaces the 21 hand-run SQL files. The baseline migration is the production schema as of 2026-11-11, with Row Level Security ported (`auth.uid()` became `app.uid()`, the `authenticated` role became `app_user`). A second migration adds the sign-in tables and the trigger that creates a pending profile for every account. The old files are in `docs/legacy/`.
+- **Scheduler:** a systemd timer replaces `pg_cron` + `pg_net` + Vault; same 15-minute call to `/api/cron/sync`.
+- **Rate limiting:** `rate-limiter-flexible` in memory replaces Upstash. The caller's address now comes from `X-Real-IP` set by Caddy.
+- **Layout:** `src/app`, `src/components`, `src/lib` (browser-safe), `src/server` (server-only); file map in `docs/migration-map.md`.
+- **Tests:** Vitest + React Testing Library (unit, component), database tests for Row Level Security, the sign-in flows and `/api/health` (`npm run test:db`), and Playwright browser tests (`npm run test:e2e`) for sign-up through approval, sign-in and out, password reset, per-location access, extraction (against a stand-in for Serper), CSV and Excel exports, the scheduler call and the security headers.
+- **Fix:** a new database now gets the single `app_settings` row (automatic-extraction settings returned an error without it).
+- **Data move:** `scripts/import-supabase.sh` copies the production data and accounts into the new database and verifies the counts.
+- **Deployment:** `deploy/` has the Caddyfile, the systemd service and timers (app, extraction tick every 15 minutes, daily database backup), a provisioning script for a fresh Ubuntu 24.04 server, a deploy script that builds on your computer and ships a self-contained build, an activation script that migrates the database, health-checks and rolls back by itself, a rollback script, and the runbook (`deploy/RUNBOOK.md`). The build is standalone and portable (the unused image optimizer and its native library are excluded).
+- Removed: `@supabase/*`, `@upstash/*`, `vercel.json`, the recovery-link callback route and cookie.
+
 ## Phase 1: Auth, approval, RBAC
 - Migrations 0001-0003: enums, `profiles` (+ signup trigger → viewer/pending, privileged-column guard trigger), `locations`, `location_groups`, `location_group_members`, `user_locations` (location **or** group per row), `reviews`, `sync_runs`, `audit_log`, `google_credentials` (single row), RLS on every table.
 - `withAuth` / `publicRoute` API helpers: CSRF Origin check, JSON content type, per-IP and per-user rate limiting (Upstash or in-memory), session + profile + approval + role checks, zod validation, uniform `{ data }` / `{ error: { code, message } }` responses.
@@ -133,3 +154,25 @@
 - **Export CSV** opens a dialog: tick the columns (presets CX Pulse layout, All columns, Same as table; remembered in this browser) and type the file name. Extra CSV columns: Type, Client, Region, Replied, Reply, Reply date. Without a choice the file is the CX Pulse layout exactly as before (the separate Export dialog is unchanged).
 - `GET /api/export/reviews` takes `columns` (only known ids, put in a fixed order); both review routes take the new filters. Table and CSV rows come from one mapper (`toReviewRow`).
 - Migration `0020_reply_hours.sql`: generated column `reviews.reply_hours` (hours from review to reply) for the Reply time filter. Run it before deploying; the other filters work without it.
+
+## Dashboard: date-range comparison (like Google Analytics), All time by default
+- Review Overview's **Compare** (was "Compare months") now compares two **date ranges**. The dates button ("Oct 14 – Nov 10, 2026 vs Sep 16 – Oct 13, 2026") opens presets (Today, Yesterday, Last 7 / 14 / 28 / 30 / 90 days, This month, Last month, Last 12 months, This year, Last year, Custom), a two-month **calendar** (click the first day, then the last; the compared range is underlined in its own colour), exact date fields, and **Compare to**: Previous period, Same period last year or Custom. Nothing changes until Apply. Default: last 28 days vs the 28 days before.
+- Days are in Philippine time and resolved on the server; a preset in a link stays relative ("last 7 days" moves with time), custom dates stay fixed. Notes appear when a range includes today or the two ranges have different lengths.
+- `GET /api/insights/compare` takes `range` or `from`/`to`, and `vs` (`previous` | `year` | `custom` with `vs_from`/`vs_to`) instead of `a`/`b` months; old dashboard links with `a`/`b` open those calendar months as custom ranges. New shared module `lib/insights/date-ranges.ts`; calendar `components/ui/range-calendar.tsx` (no new dependency).
+- The Dashboard's **Period** now starts on **All time** (was Last 12 months).
+
+## User guide and guided tour
+- **User guide** at the bottom of the sidebar opens `/guide`: Getting started (sign-up, roles table, finding your way), Overview, Location page, Dashboard (filters, Compare, Reputation, Sentiment / Review Intelligence), Extraction (browsing, CSV export, running extractions, managing locations, automatic extraction), Users, Understanding the numbers and Troubleshooting. It shows only what the signed-in role can use (parts for admins or managers are tagged), has a search box, a contents list, links like `/guide#extraction` and "Open …" buttons.
+- **Guided tour**: highlights the main controls step by step (sidebar, Dashboard filters, tabs, Compare, review filters, Columns / Export CSV, Extract for admins and managers, Users for admins, the guide). Opens each step's page, skips steps whose control is not on screen; Back / Next / Skip, Esc to stop. Starts once per user in each browser on a computer-sized screen; **Start the tour** on the guide replays it. Built in-house (no new dependency).
+
+## Dashboard: clearer Compare date picker
+- The picker now has distinct areas: a tinted header with the live "range vs range" summary, presets on a shaded side panel (the chosen one marked with a coloured bar), the calendar in its own frame with a line saying which range your clicks set, the two ranges as cards tinted in their chart colours (the one the calendar sets is outlined; "Set on calendar" switches with a custom comparison, replacing the toggle), and a separate footer with Cancel / Apply. Works in light and dark mode.
+
+## Dashboard: Period is a date-range picker, with Compare to inside it
+- The **Period** filter is now a date button that opens a range picker (laid out like the client's reference): From / To fields, two calendars side by side (each with ← / → and month / year dropdowns, weeks starting Monday, the range as a solid block), **Compare to** at the bottom (previous period / same period last year / custom dates), and on the right **Last** (All time, Yesterday, Last 7 / 28 / 30 / 90 days, Last month, Last 3 / 6 / 12 / 24 months, Last year), **Current** (Today, This week, This month, This year) and **Custom** (a calendar click selects a period, a week, a month or a day), then Cancel / Apply. Full screen on phones, with Cancel / Apply at the bottom.
+- Every Dashboard tab follows the chosen dates (`range` or `from`/`to` on every `/api/insights/*` and `/api/stats/dashboard` route; old `months` links still work and the old choices keep their meaning). With Compare to on, the comparison shows under Review Overview and the Reputation highlights compare against those dates. All time cannot be compared.
+- The separate Compare checkbox and dates button from the previous round are gone (old `?range=…` and `?a=…&b=…` links open as the Period / comparison). Excel export headers, the theme panel, help texts, the User guide and the tour use the new wording.
+
+## Extraction access and Compare to on every Dashboard tab
+- Extraction access: manual extraction is for admins and the users an admin allows (Users page, **Manual extraction** switch; migration 0021 `profiles.can_extract`, everyone starts without it). `POST /api/extract` and `GET /api/extract/status` check it. Other users see a read-only card with the automatic extraction time (`GET /api/auto-extract/schedule`, through `public.auto_extract_schedule()`). Automatic extraction stays admin-only.
+- Dashboard: Compare to applies to every tab. The overview, reputation, themes and chart routes return the compared dates' figures in `compare` (lib/data/insight-scope.ts `withCompare`; both ranges counted in full), and each tab shows ▲ / ▼ changes; Reputation's charts draw both ranges.

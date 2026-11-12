@@ -2,8 +2,6 @@
 
 import { useState, type FormEvent } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { Suspense } from "react";
 import Alert from "@mui/material/Alert";
 import MuiLink from "@mui/material/Link";
 import TextField from "@mui/material/TextField";
@@ -14,8 +12,7 @@ import { forgotPasswordSchema } from "@/lib/schemas/auth";
 
 function ForgotPasswordForm() {
   const forgot = useForgotPassword();
-  const expired = useSearchParams().has("expired");
-  const [email, setEmail] = useState("");
+    const [email, setEmail] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
 
   function onSubmit(e: FormEvent) {
@@ -40,7 +37,7 @@ function ForgotPasswordForm() {
   return (
     <AuthCard title="Reset your password" subtitle="We will email you a link to choose a new one.">
       <AuthForm
-        error={formError ?? forgot.error?.message ?? (expired ? "That link has expired or was already used. Request a new one." : null)}
+        error={formError ?? forgot.error?.message ?? null}
         onSubmit={onSubmit}
         submit={["Send reset link", "Sending…"]}
         pending={forgot.isPending}
@@ -52,11 +49,6 @@ function ForgotPasswordForm() {
   );
 }
 
-// useSearchParams needs a Suspense boundary so the page can still be prerendered.
 export default function ForgotPasswordPage() {
-  return (
-    <Suspense>
-      <ForgotPasswordForm />
-    </Suspense>
-  );
+  return <ForgotPasswordForm />;
 }

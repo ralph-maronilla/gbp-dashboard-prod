@@ -1,12 +1,15 @@
 import "server-only";
+import { readFileSync } from "node:fs";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@/generated/prisma/client";
 import { env } from "@/server/env";
 
 function sslConfig() {
-  // Prefer the real Supabase CA (set DATABASE_CA_CERT to the PEM, newlines as \n).
+  // Managed PostgreSQL (Lightsail) requires TLS. Verify it against the provider's CA bundle: the PEM text in
+  // DATABASE_CA_CERT (newlines as \n) or a file path in DATABASE_CA_FILE.
   if (process.env.DATABASE_CA_CERT) return { ca: process.env.DATABASE_CA_CERT.replace(/\\n/g, "\n") };
-  // Dev-only escape hatch for "self-signed certificate in certificate chain" errors.
+  if (process.env.DATABASE_CA_FILE) return { ca: readFileSync(process.env.DATABASE_CA_FILE, "utf8") };
+  // Development-only escape hatch for a local database that insists on TLS with a self-signed certificate.
   if (!env.isProd && process.env.DATABASE_SSL_NO_VERIFY === "true") return { rejectUnauthorized: false };
   return undefined;
 }
@@ -15,7 +18,9 @@ function createClient() {
   const adapter = new PrismaPg({
     connectionString: env.databaseUrl,
     ssl: sslConfig(),
-    max: env.isProd ? 3 : 10, // serverless: keep per-instance pools small
+    // The adapter writes timestamps as UTC; pin the session to UTC so the server's own timezone never shifts them (as in production).
+    options: "-c timezone=UTC",
+    max: env.dbPoolMax,
   });
   return new PrismaClient({ adapter });
 }

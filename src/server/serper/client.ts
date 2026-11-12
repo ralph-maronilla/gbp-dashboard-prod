@@ -6,7 +6,6 @@ import type { ProviderReview } from "@/server/sync/types";
 import { MIN_REQUEST_MS, SerperError, SerperTimeBudgetError } from "./errors";
 import type { PlaceKey } from "./maps-input";
 
-const BASE = "https://google.serper.dev";
 const MAX_ATTEMPTS = 3;
 const TIMEOUT_MS = 20_000;
 
@@ -43,7 +42,7 @@ async function post<S extends z.ZodType>(path: string, body: Record<string, unkn
     if (left < MIN_REQUEST_MS) throw new SerperTimeBudgetError();
     let res: Response;
     try {
-      res = await fetch(`${BASE}/${path}`, {
+      res = await fetch(`${env.serperBaseUrl}/${path}`, {
         method: "POST",
         headers: { "X-API-KEY": key, "Content-Type": "application/json" },
         body: JSON.stringify({ gl: env.serperGl, hl: env.serperHl, ...body }),

@@ -24,7 +24,7 @@ export const GET = withAuth({ roles: ["admin"], query: listUsersQuerySchema }, a
         orderBy: { created_at: "desc" },
         skip: query.page * query.pageSize,
         take: query.pageSize,
-        select: { id: true, email: true, full_name: true, role: true, status: true, created_at: true, approved_at: true, last_seen_at: true, last_path: true },
+        select: { id: true, email: true, full_name: true, role: true, status: true, can_extract: true, created_at: true, approved_at: true, last_seen_at: true, last_path: true },
       }),
       tx.profiles.count({ where }),
     ]);

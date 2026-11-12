@@ -4,6 +4,14 @@ import type { NextConfig } from "next";
 const apiCsp = "default-src 'none'; frame-ancestors 'none'";
 
 const nextConfig: NextConfig = {
+  // Self-contained server output (server.js + only the files it needs): this is what gets copied to the server.
+  output: "standalone",
+  // The app does not use next/image, so skip the image optimizer: its native library (sharp) is built for the machine that
+  // runs the build, and a Mac-built copy would not load on the Linux server.
+  images: { unoptimized: true },
+  outputFileTracingExcludes: { "*": ["node_modules/sharp/**", "node_modules/@img/**"] },
+  // Browser tests run their own server from a separate build folder so they never clash with a dev server you have open.
+  distDir: process.env.NEXT_DIST_DIR || ".next",
   poweredByHeader: false,
   async redirects() {
     // Overview moved to the home page.

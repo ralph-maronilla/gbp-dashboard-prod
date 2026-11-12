@@ -1,0 +1,13 @@
+[Unit]
+Description=GBP Review Dashboard: database backup
+
+[Service]
+Type=oneshot
+User=gbp
+Group=gbp
+ExecStart=/srv/gbp/bin/backup.sh
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/backups/gbp

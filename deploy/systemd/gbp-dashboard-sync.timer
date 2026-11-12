@@ -1,0 +1,10 @@
+[Unit]
+Description=GBP Review Dashboard: call the extraction tick every 15 minutes
+
+[Timer]
+OnCalendar=*:0/15
+AccuracySec=15s
+Unit=gbp-dashboard-sync.service
+
+[Install]
+WantedBy=timers.target

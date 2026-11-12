@@ -9,6 +9,7 @@ import Chip from "@mui/material/Chip";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Stack from "@mui/material/Stack";
+import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
@@ -80,6 +81,28 @@ export default function AdminUsersPage() {
             ))}
           </Select>
         ),
+      },
+      {
+        field: "can_extract",
+        headerName: "Manual extraction",
+        width: 150,
+        sortable: false,
+        renderCell: ({ row }) =>
+          row.role === "admin" ? (
+            <Typography variant="body2" color="text.secondary" sx={{ lineHeight: "inherit" }}>
+              Always (admin)
+            </Typography>
+          ) : (
+            <Tooltip title={row.can_extract ? "Can run manual extractions (uses Serper credits). Switch off to remove." : "Allow this person to run manual extractions (uses Serper credits)"}>
+              <Switch
+                size="small"
+                checked={row.can_extract}
+                disabled={update.isPending}
+                onChange={(e) => update.mutate({ id: row.id, input: { action: "set_can_extract", value: e.target.checked } })}
+                slotProps={{ input: { "aria-label": `Manual extraction for ${row.email}` } }}
+              />
+            </Tooltip>
+          ),
       },
       {
         field: "status",

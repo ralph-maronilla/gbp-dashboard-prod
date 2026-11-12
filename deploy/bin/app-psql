@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# psql against the app's database with the right address, password and TLS settings, read from /etc/gbp-dashboard/env.
+# Run it as the app's user:   sudo -u gbp /srv/gbp/bin/app-psql -c "select count(*) from public.reviews"
+set -euo pipefail
+set -a; . /etc/gbp-dashboard/env; set +a
+exec psql "${DATABASE_URL}?sslmode=verify-full&sslrootcert=${DATABASE_CA_FILE:-/etc/ssl/certs/rds-global-bundle.pem}" "$@"

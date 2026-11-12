@@ -2,7 +2,7 @@ import "server-only";
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { env } from "@/server/env";
-import { createSupabaseServerClient, type SupabaseServerClient } from "@/server/supabase/server";
+import { getSessionUser } from "@/server/auth/service";
 import { withRls, type Tx } from "@/server/db/with-rls";
 import { profileSchema, type Profile, type Role } from "@/lib/schemas/common";
 import { ApiError, Errors } from "./errors";
@@ -18,9 +18,7 @@ type RouteHandler = (req: NextRequest, route: RouteContext) => Promise<Response>
 export interface AuthContext {
   user: { id: string };
   profile: Profile;
-  /** Supabase client for auth operations only (sign out). Data access goes through `db`. */
-  supabase: SupabaseServerClient;
-  /** Runs `fn` in an RLS-scoped Prisma transaction as the caller (see lib/db/with-rls.ts). */
+  /** Runs `fn` in an RLS-scoped Prisma transaction as the caller (see server/db/with-rls.ts). */
   db: <T>(fn: (tx: Tx) => Promise<T>) => Promise<T>;
   ip: string;
 }
@@ -126,7 +124,7 @@ async function enforce(rule: RateLimitRule, identity: string) {
 }
 
 /**
- * Wraps a route handler with: CSRF/content-type → IP rate limit → session (validated with Supabase) →
+ * Wraps a route handler with: CSRF/content-type → IP rate limit → session (validated against the database) →
  * profile → approval → role → per-user rate limit → zod parsing. Handler code runs only after all pass.
  */
 export function withAuth<
@@ -147,15 +145,14 @@ export function withAuth<
       const ip = clientIp(req);
       await enforce(IP_RULE, ip);
 
-      const supabase = await createSupabaseServerClient();
-      const { data, error } = await supabase.auth.getUser();
-      if (error || !data.user) throw Errors.unauthenticated();
+      const sessionUser = await getSessionUser(req.headers);
+      if (!sessionUser) throw Errors.unauthenticated();
 
-      const userId = data.user.id;
+      const userId = sessionUser.id;
       const row = await withRls(userId, (tx) =>
         tx.profiles.findUnique({
           where: { id: userId },
-          select: { id: true, email: true, full_name: true, role: true, status: true },
+          select: { id: true, email: true, full_name: true, role: true, status: true, can_extract: true },
         }),
       );
       const parsed = profileSchema.safeParse(row);
@@ -171,7 +168,6 @@ export function withAuth<
       const ctx: AuthContext = {
         user: { id: profile.id },
         profile,
-        supabase,
         db: (fn) => withRls(profile.id, fn),
         ip,
       };

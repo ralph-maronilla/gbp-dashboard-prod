@@ -33,3 +33,10 @@ export interface AutoExtractStatus {
     error: string | null;
   } | null;
 }
+
+/** What every user sees of automatic extraction: on or off and its time ("HH:MM" in `time_zone`). */
+export interface AutoExtractSchedule {
+  enabled: boolean;
+  time: string | null;
+  time_zone: string;
+}

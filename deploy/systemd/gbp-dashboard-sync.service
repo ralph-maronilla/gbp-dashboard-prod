@@ -1,0 +1,16 @@
+[Unit]
+Description=GBP Review Dashboard: automatic extraction tick
+After=gbp-dashboard.service
+
+[Service]
+Type=oneshot
+User=gbp
+Group=gbp
+EnvironmentFile=/etc/gbp-dashboard/env
+# A call does nothing until an admin has switched automatic extraction on and the chosen time has come (README).
+# -f: a non-2xx answer fails the unit, so it shows up in `systemctl status` and the journal.
+ExecStart=/usr/bin/curl -fsS --max-time 90 -H "Authorization: Bearer ${CRON_SECRET}" http://127.0.0.1:3000/api/cron/sync
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true

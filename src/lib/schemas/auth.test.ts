@@ -34,7 +34,15 @@ describe("forgotPasswordSchema / resetPasswordSchema", () => {
     expect(forgotPasswordSchema.parse({ email: " A@B.co " }).email).toBe("a@b.co");
   });
   it("applies the signup password rules on reset", () => {
-    expect(resetPasswordSchema.safeParse({ password: "short" }).success).toBe(false);
-    expect(resetPasswordSchema.safeParse({ password: "longenough" }).success).toBe(true);
+    expect(resetPasswordSchema.safeParse({ token: "t", password: "short" }).success).toBe(false);
+    expect(resetPasswordSchema.safeParse({ token: "t", password: "longenough" }).success).toBe(true);
+  });
+  it("needs the emailed token", () => {
+    expect(resetPasswordSchema.safeParse({ password: "longenough" }).success).toBe(false);
+    expect(resetPasswordSchema.safeParse({ token: "", password: "longenough" }).success).toBe(false);
+  });
+  it("rejects passwords over 72 bytes, which bcrypt would silently cut", () => {
+    expect(signupSchema.safeParse({ email: "a@b.co", password: "é".repeat(36) }).success).toBe(true); // 72 bytes
+    expect(signupSchema.safeParse({ email: "a@b.co", password: "é".repeat(37) }).success).toBe(false); // 74 bytes
   });
 });

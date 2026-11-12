@@ -2,9 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import Checkbox from "@mui/material/Checkbox";
 import CircularProgress from "@mui/material/CircularProgress";
-import FormControlLabel from "@mui/material/FormControlLabel";
 import IconButton from "@mui/material/IconButton";
 import Paper from "@mui/material/Paper";
 import Skeleton from "@mui/material/Skeleton";
@@ -14,9 +12,10 @@ import Tabs from "@mui/material/Tabs";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import RefreshIcon from "@mui/icons-material/Refresh";
-import SwapHorizIcon from "@mui/icons-material/SwapHoriz";
 import type { ReactNode } from "react";
-import { CompareSection, compareMonthOptions } from "@/components/dashboard/compare-section";
+import { PeriodPicker, selectionLabel, type PeriodSelection } from "@/components/dashboard/period-picker";
+import { CompareSection } from "@/components/dashboard/compare-section";
+import { CompareLabel } from "@/components/dashboard/change-text";
 import { IntelligenceTab } from "@/components/dashboard/intelligence-tab";
 import {
   OverviewTab,
@@ -54,9 +53,16 @@ import {
 } from "@/lib/ph-regions";
 import { THEME_KEYS, themeByKey, type ThemeKey } from "@/lib/insights/themes";
 import {
+  COMPARE_MODE_KEYS,
+  RANGE_PRESET_KEYS,
+  isDay,
+  lastOfMonth,
+  presetForMonths,
+  type CompareMode,
+  type RangePreset,
+} from "@/lib/insights/date-ranges";
+import {
   GROUP_BYS,
-  INSIGHT_PERIODS,
-  LAST_MONTH,
   THEME_SENTIMENTS,
   UNASSIGNED,
   type GroupBy,
@@ -64,7 +70,7 @@ import {
 } from "@/lib/schemas/insights";
 
 type TabKey = "overview" | "reputation" | "sentiment" | "intelligence";
-/** Tabs shown in the bar. Month comparison lives in Review Overview (the "Compare months" filter). */
+/** Tabs shown in the bar. The comparison (Period → Compare to) shows in Review Overview. */
 const TABS: { key: TabKey; label: string }[] = [
   { key: "overview", label: "Review Overview" },
   { key: "reputation", label: "Reputation" },
@@ -74,7 +80,10 @@ const TABS: { key: TabKey; label: string }[] = [
 
 interface State {
   tab: TabKey;
-  months: number;
+  /** The Period (PeriodPicker): a preset, or "" with custom `from`-`to` days. */
+  period: "" | RangePreset;
+  from: string;
+  to: string;
   group_id: string;
   region: string;
   island: string;
@@ -87,18 +96,21 @@ interface State {
   granularity: Granularity;
   /** Review Overview figures; "" = automatic (Google when every location has Google totals). */
   source: "" | OverviewSource;
-  /** Review Overview: "Compare months" ticked, showing the month comparison under the overview. */
+  /** "Compare to" ticked in the Period: the comparison shows under Review Overview and the Reputation highlights use it.
+   *  Compared with the previous period, the same period last year, or custom `vs_from`-`vs_to`. */
   compare: boolean;
-  /** Compared months ("YYYY-MM"); "" = the last full month and the one before it. */
-  cmp_a: string;
-  cmp_b: string;
+  vs: CompareMode;
+  vs_from: string;
+  vs_to: string;
   /** Review Intelligence: the theme whose reviews are open in the side panel ("" = closed) and their sentiment filter. */
   theme: "" | ThemeKey;
   theme_s: ThemeSentimentFilter;
 }
 const DEFAULTS: State = {
   tab: "overview",
-  months: 12,
+  period: "all",
+  from: "",
+  to: "",
   group_id: "",
   region: "",
   island: "",
@@ -109,8 +121,9 @@ const DEFAULTS: State = {
   granularity: "auto",
   source: "",
   compare: false,
-  cmp_a: "",
-  cmp_b: "",
+  vs: "previous",
+  vs_from: "",
+  vs_to: "",
   theme: "",
   theme_s: "all",
 };
@@ -119,7 +132,9 @@ const SOURCES: OverviewSource[] = ["google", "extracted"];
 /** Query-string name of each filter (the rest of the state is not in the URL). */
 const URL_KEYS: Record<keyof State, string> = {
   tab: "tab",
-  months: "months",
+  period: "period",
+  from: "from",
+  to: "to",
   group_id: "group_id",
   region: "region",
   island: "island",
@@ -130,12 +145,47 @@ const URL_KEYS: Record<keyof State, string> = {
   granularity: "buckets",
   source: "source",
   compare: "compare",
-  cmp_a: "a",
-  cmp_b: "b",
+  vs: "vs",
+  vs_from: "vs_from",
+  vs_to: "vs_to",
   theme: "theme",
   theme_s: "theme_s",
 };
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+/** The comparison's state keys, only in the URL while Compare is ticked. */
+const COMPARE_KEYS = new Set<keyof State>(["vs", "vs_from", "vs_to"]);
+
+type PeriodState = Pick<State, "period" | "from" | "to" | "compare" | "vs" | "vs_from" | "vs_to">;
+
+/**
+ * Period and comparison from the URL. Older links still open: `months=12` (the old Period list), a comparison's
+ * `range` / `from` / `to` (they become the period), and two months `a=2026-10&b=2026-09` (October vs September).
+ */
+function parsePeriod(p: URLSearchParams): PeriodState {
+  const day = (k: string) => (isDay(p.get(k) ?? "") ? (p.get(k) as string) : "");
+  const [a, b] = [p.get("a") ?? "", p.get("b") ?? ""];
+  if (MONTH.test(a) && MONTH.test(b) && !p.has("period") && !p.has("from"))
+    return { period: "", from: `${a}-01`, to: lastOfMonth(`${a}-01`), compare: true, vs: "custom", vs_from: `${b}-01`, vs_to: lastOfMonth(`${b}-01`) };
+  const [from, to, vsFrom, vsTo] = [day("from"), day("to"), day("vs_from"), day("vs_to")];
+  const custom = !!from && !!to && from <= to;
+  const preset =
+    oneOf(["", ...RANGE_PRESET_KEYS], p.get("period") ?? p.get("range"), "") ||
+    (p.has("months") ? presetForMonths(Number(p.get("months"))) : undefined) ||
+    DEFAULTS.period;
+  const vs = oneOf(COMPARE_MODE_KEYS, p.get("vs"), DEFAULTS.vs);
+  const customVs = !!vsFrom && !!vsTo && vsFrom <= vsTo;
+  const period = custom ? "" : preset;
+  return {
+    period,
+    from: custom ? from : "",
+    to: custom ? to : "",
+    // All time has nothing to compare with; a custom comparison without valid dates falls back to the previous period.
+    compare: p.get("compare") === "1" && period !== "all",
+    vs: vs === "custom" && !customVs ? "previous" : vs,
+    vs_from: vs === "custom" && customVs ? vsFrom : "",
+    vs_to: vs === "custom" && customVs ? vsTo : "",
+  };
+}
 
 const oneOf = <T extends string>(
   values: readonly T[],
@@ -145,21 +195,14 @@ const oneOf = <T extends string>(
   (values as readonly string[]).includes(value ?? "") ? (value as T) : fallback;
 
 function parseState(p: URLSearchParams): State {
-  const months = Number(p.get("months"));
   const text = (k: keyof State) => p.get(URL_KEYS[k]) ?? "";
-  // Links from when Compare was its own tab open the Review Overview with Compare months ticked.
-  const oldCompareTab = p.get("tab") === "compare";
   return {
     tab: oneOf(
       TABS.map((t) => t.key),
       p.get("tab"),
       DEFAULTS.tab,
     ),
-    compare: oldCompareTab || p.get("compare") === "1",
-    months:
-      p.has("months") && (INSIGHT_PERIODS as readonly number[]).includes(months)
-        ? months
-        : DEFAULTS.months,
+    ...parsePeriod(p),
     group_id: text("group_id"),
     region: text("region"),
     island: text("island"),
@@ -169,8 +212,6 @@ function parseState(p: URLSearchParams): State {
     heat_by: oneOf(GROUP_BYS, p.get("heat_by"), DEFAULTS.heat_by),
     granularity: oneOf(GRANULARITIES, p.get("buckets"), DEFAULTS.granularity),
     source: oneOf(SOURCES, p.get("source"), ""),
-    cmp_a: MONTH.test(text("cmp_a")) ? text("cmp_a") : "",
-    cmp_b: MONTH.test(text("cmp_b")) ? text("cmp_b") : "",
     theme: oneOf(THEME_KEYS, p.get("theme"), ""),
     theme_s: oneOf(THEME_SENTIMENTS, p.get("theme_s"), DEFAULTS.theme_s),
   };
@@ -187,8 +228,8 @@ function useDashboardState() {
   useEffect(() => {
     const p = new URLSearchParams();
     for (const k of Object.keys(URL_KEYS) as (keyof State)[]) {
-      // The compared months only matter while Compare months is ticked (they are kept for when it is ticked again).
-      if ((k === "cmp_a" || k === "cmp_b") && !state.compare) continue;
+      // The comparison only matters while Compare is ticked (it is kept for when it is ticked again).
+      if (COMPARE_KEYS.has(k) && !state.compare) continue;
       if (state[k] !== DEFAULTS[k])
         p.set(URL_KEYS[k], typeof state[k] === "boolean" ? "1" : String(state[k]));
     }
@@ -234,8 +275,13 @@ function DashboardView() {
   const groups = useGroups();
   const locations = useExtractLocations();
 
+  // The period as the API takes it; the comparison only while Compare is ticked (All time has none).
+  const comparing = state.compare && state.period !== "all";
+  const vsParams = comparing
+    ? { vs: state.vs, vs_from: state.vs_from || undefined, vs_to: state.vs_to || undefined }
+    : {};
   const filters = {
-    months: state.months,
+    ...(state.period ? { range: state.period } : { from: state.from, to: state.to }),
     group_id: state.group_id || undefined,
     region: state.region || undefined,
     island: (state.island || undefined) as
@@ -246,30 +292,19 @@ function DashboardView() {
     location_type: state.location_type || undefined,
     location_id: state.location_id || undefined,
   };
-  const overview = useOverviewInsights(filters, state.tab === "overview");
-  const comparing = state.tab === "overview" && state.compare;
+  // With Compare to, every tab also gets the same figures for the compared dates (`compare` in each response).
+  const overview = useOverviewInsights({ ...filters, ...vsParams }, state.tab === "overview");
   const reputation = useReputationInsights(
-    { ...filters, group_by: state.group_by },
+    { ...filters, ...vsParams, group_by: state.group_by },
     state.tab === "reputation",
   );
   const charts = useDashboard(
-    { ...filters, granularity: state.granularity },
+    { ...filters, ...vsParams, granularity: state.granularity },
     state.tab === "reputation",
   );
-  const compare = useCompareInsights(
-    {
-      group_id: filters.group_id,
-      region: filters.region,
-      island: filters.island,
-      location_type: filters.location_type,
-      location_id: filters.location_id,
-      a: state.cmp_a || undefined,
-      b: state.cmp_b || undefined,
-    },
-    comparing,
-  );
+  const compare = useCompareInsights({ ...filters, ...vsParams }, state.tab === "overview" && comparing);
   const themes = useThemeInsights(
-    { ...filters, group_by: state.heat_by },
+    { ...filters, ...vsParams, group_by: state.heat_by },
     state.tab === "sentiment" || state.tab === "intelligence",
   );
 
@@ -299,10 +334,10 @@ function DashboardView() {
     intelligence: themes,
   }[state.tab];
   const busy = state.tab === "reputation" ? reputation.isPlaceholderData || charts.isPlaceholderData : active.isPlaceholderData;
-  // Pin both months once the user changes one, so the other does not move with the defaults.
-  const compareMonths = (p: { a?: string; b?: string }) =>
-    compare.data &&
-    set({ cmp_a: p.a ?? compare.data.a.month, cmp_b: p.b ?? compare.data.b.month });
+  // The compared dates as the server resolved them; null while Compare to is off (or still loading).
+  const compared = comparing ? active.data?.compare : null;
+  const compareLabel = compared?.label ?? null;
+  const compareCtx = useMemo(() => (compareLabel ? { label: compareLabel, sameLength: compared?.same_length ?? true } : null), [compareLabel, compared?.same_length]);
   if (active.error instanceof ApiClientError && active.error.isForbidden)
     return <NoAccess />;
 
@@ -332,7 +367,7 @@ function DashboardView() {
         <Stack spacing={3}>
           {body}
           {compare.isError ? (
-            <RetryAlert what="the month comparison" onRetry={() => void compare.refetch()} />
+            <RetryAlert what="the comparison" onRetry={() => void compare.refetch()} />
           ) : compare.data ? (
             <LoadingOverlay active={compare.isPlaceholderData}>
               <CompareSection data={compare.data} />
@@ -382,12 +417,15 @@ function DashboardView() {
     ...(unassigned ? [{ value: UNASSIGNED, label: "Unassigned" }] : []),
   ];
   const named = (v: string) => ({ value: v, label: v });
-  const periodLabel = (m: number) =>
-    m === 0 ? "All time" : m === LAST_MONTH ? "Last month" : `Last ${m} months`;
-  const periods: Option[] = INSIGHT_PERIODS.map((m) => ({
-    value: String(m),
-    label: periodLabel(m),
-  }));
+  const selection: PeriodSelection = {
+    period: state.period,
+    from: state.from,
+    to: state.to,
+    compare: comparing,
+    vs: state.vs,
+    vsFrom: state.vs_from,
+    vsTo: state.vs_to,
+  };
   const filterFields: [
     label: string,
     key: "group_id" | "region" | "island" | "location_type" | "location_id",
@@ -463,7 +501,7 @@ function DashboardView() {
                 sx={{ m: "4px" }}
               />
             ) : (
-              <Tooltip title="Refresh now">
+              <Tooltip title="Reloads the figures from the database. It does not fetch from Google or use credits.">
                 <IconButton
                   size="small"
                   aria-label="Refresh now"
@@ -480,14 +518,13 @@ function DashboardView() {
         )}
       </Stack>
 
-      <Paper variant="outlined" sx={{ p: 2 }}>
+      <Paper variant="outlined" sx={{ p: 2 }} data-tour="dash-filters">
         <Stack direction="row" useFlexGap spacing={2} sx={{ flexWrap: "wrap" }}>
-          <SelectField
-            label="Period"
-            value={String(state.months)}
-            options={periods}
-            width={160}
-            onChange={(v) => set({ months: Number(v) })}
+          <PeriodPicker
+            value={selection}
+            onApply={(s) =>
+              set({ period: s.period, from: s.from, to: s.to, compare: s.compare, vs: s.vs, vs_from: s.vsFrom, vs_to: s.vsTo })
+            }
           />
           {filterFields.map(([label, key, opts, width]) => (
             <SelectField
@@ -499,62 +536,13 @@ function DashboardView() {
               onChange={(v) => set({ [key]: v })}
             />
           ))}
-          {state.tab === "overview" && (
-            <FormControlLabel
-              control={
-                <Checkbox
-                  size="small"
-                  checked={state.compare}
-                  onChange={(e) => set({ compare: e.target.checked })}
-                />
-              }
-              label="Compare months"
-            />
-          )}
         </Stack>
-        {comparing && (
-          <Stack
-            direction="row"
-            useFlexGap
-            spacing={2}
-            sx={{ alignItems: "center", flexWrap: "wrap", mt: 2 }}
-          >
-            {/* Until the first comparison loads there are no month choices: the fields wait, disabled. */}
-            <SelectField
-              label="Month"
-              value={compare.data?.a.month ?? ""}
-              options={compareMonthOptions(compare.data, compare.data?.b.month ?? "")}
-              width={200}
-              disabled={!compare.data}
-              onChange={(a) => compareMonths({ a })}
-            />
-            <Typography color="text.secondary">compared with</Typography>
-            <SelectField
-              label="Compared with"
-              value={compare.data?.b.month ?? ""}
-              options={compareMonthOptions(compare.data, compare.data?.a.month ?? "")}
-              width={200}
-              disabled={!compare.data}
-              onChange={(b) => compareMonths({ b })}
-            />
-            <Tooltip title="Swap the two months">
-              <span>
-                <IconButton
-                  aria-label="Swap the two months"
-                  disabled={!compare.data}
-                  onClick={() =>
-                    compare.data &&
-                    compareMonths({ a: compare.data.b.month, b: compare.data.a.month })
-                  }
-                >
-                  <SwapHorizIcon />
-                </IconButton>
-              </span>
-            </Tooltip>
-            <Typography variant="caption" color="text.secondary">
-              The comparison below uses these two months, not Period.
-            </Typography>
-          </Stack>
+        {comparing && compareLabel && (
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1.5 }}>
+            Figures are for the Period; ▲ / ▼ show the change against {compareLabel} (green better, red worse; hover for the compared value).
+            Both ranges are counted in full, so figures that otherwise use the last 30 or 90 days cover the whole period.
+            {state.tab === "overview" ? " The side-by-side comparison is below." : ""}
+          </Typography>
         )}
       </Paper>
 
@@ -564,13 +552,16 @@ function DashboardView() {
         variant="scrollable"
         allowScrollButtonsMobile
         aria-label="Dashboard views"
+        data-tour="dash-tabs"
       >
         {TABS.map((t) => (
           <Tab key={t.key} value={t.key} label={t.label} />
         ))}
       </Tabs>
 
-      <LoadingOverlay active={busy}>{body}</LoadingOverlay>
+      <CompareLabel.Provider value={compareCtx}>
+        <LoadingOverlay active={busy}>{body}</LoadingOverlay>
+      </CompareLabel.Provider>
 
       <ThemeReviewsDrawer
         theme={state.tab === "intelligence" && state.theme ? state.theme : null}
@@ -578,7 +569,7 @@ function DashboardView() {
         onSentiment={(s) => set({ theme_s: s })}
         onClose={() => set({ theme: "", theme_s: DEFAULTS.theme_s })}
         filters={filters}
-        period={periodLabel(state.months)}
+        period={selectionLabel(selection).period}
       />
     </Stack>
   );

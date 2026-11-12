@@ -20,7 +20,9 @@ import type { ReactNode } from "react";
 import { HELP, themeTileHelp } from "@/lib/insights/help";
 import type { ThemeKey } from "@/lib/insights/themes";
 import { issueLevel, type Signal } from "@/lib/insights/signals";
-import type { ActionLocation, GroupBy, InsightsQuery, RecommendedAction, ThemeInsights } from "@/lib/schemas/insights";
+import type { ActionLocation, GroupBy, InsightsQuery, RecommendedAction, ThemeInsights, ThemeStat, WithCompare } from "@/lib/schemas/insights";
+import { changeBetween, enoughReviews } from "@/lib/insights/compare";
+import { useCompareLabel, VsChange } from "./change-text";
 import { DataTable } from "@/components/ui/data-table";
 import { LabelWithTip } from "./info-tip";
 import { GroupToggle } from "./reputation-tab";
@@ -38,6 +40,18 @@ const ICONS: Record<ThemeKey, ReactNode> = {
   diagnostics: <ScienceOutlinedIcon fontSize="large" />,
   commendations: <StarBorderIcon fontSize="large" />,
 };
+
+/** The share behind a tile's signal (negative for issues, positive for commendations) against the Compare-to dates. */
+function TileChange({ theme, was }: { theme: ThemeStat; was: ThemeStat | undefined }) {
+  if (!was) return null;
+  const k = theme.kind === "commendation" ? "positive_pct" : "negative_pct";
+  const change = changeBetween("pts", theme.kind === "commendation" ? "up" : "down", theme[k], was[k], enoughReviews(theme.mentions, was.mentions));
+  return (
+    <Box sx={{ display: "flex", justifyContent: "center" }}>
+      <VsChange block={false} change={change} was={`${was[k] === null ? "-" : `${Math.round(was[k])}%`} ${theme.kind === "commendation" ? "positive" : "negative"}`} />
+    </Box>
+  );
+}
 
 /** The guide's tile wording: Watch on a theme tile reads "Watch Area". */
 const tileSignal = (s: Signal): Signal => (s.label === "Watch" ? { ...s, label: "Watch Area" } : s);
@@ -102,7 +116,7 @@ export function IntelligenceTab({
   onTheme,
   exportParams,
 }: {
-  data: ThemeInsights;
+  data: WithCompare<ThemeInsights>;
   groupBy: GroupBy;
   onGroupBy: (g: GroupBy) => void;
   /** Opens the reviews that mention a theme (tile click). */
@@ -110,6 +124,9 @@ export function IntelligenceTab({
   /** Dashboard filters for the Excel export. */
   exportParams: Partial<InsightsQuery>;
 }) {
+  const compareLabel = useCompareLabel();
+  const was = data.compare ? new Map(data.compare.data.themes.map((t) => [t.key, t])) : null;
+  const wasCell = (group: string, key: ThemeKey) => data.compare?.data.heatmap.find((r) => r.group === group)?.cells.find((c) => c.key === key);
   return (
     <Grid container spacing={2}>
       <Grid size={12}>
@@ -140,6 +157,7 @@ export function IntelligenceTab({
                 <Typography variant="caption" color="primary">
                   {t.mentions.toLocaleString()} review{t.mentions === 1 ? "" : "s"} ›
                 </Typography>
+                {was && <TileChange theme={t} was={was.get(t.key)} />}
               </Paper>
             ))}
           </Box>
@@ -169,8 +187,9 @@ export function IntelligenceTab({
                   align: "center" as const,
                   cell: (row: (typeof data.heatmap)[number]) => {
                     const c = row.cells.find((x) => x.key === t.key);
+                    const b = compareLabel ? wasCell(row.group, t.key) : undefined;
                     return c && (
-                      <div title={`${c.mentions} mentions`}>
+                      <div title={`${c.mentions} mentions` + (compareLabel ? ` (vs ${b ? `${b.mentions} mentions, ${b.level.label}` : "none"} in ${compareLabel})` : "")}>
                         <SignalPill signal={c.level} fullWidth />
                       </div>
                     );
@@ -181,7 +200,7 @@ export function IntelligenceTab({
           )}
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 1 }}>
             Cells show how negative each theme&apos;s mentions are in that group (High 25%+, Moderate 10–24%, Low under 10%); Positive Commendations
-            shows Strength / Stable / Watch by its positive share. Hover a cell for the number of mentions.
+            shows Strength / Stable / Watch by its positive share. Hover a cell for the number of mentions{compareLabel ? " and the Compare-to figures" : ""}.
           </Typography>
         </SectionCard>
         <SectionCard title="Recommended Actions" info={HELP.actions}>

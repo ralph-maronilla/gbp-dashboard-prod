@@ -1,25 +1,36 @@
 # Review Dashboard
 
 Next.js (App Router) app that extracts Google Maps reviews for any number of locations through
-[Serper](https://serper.dev), shows them per client, and exports them in the CX Pulse upload layout. Supabase for
-auth and data, Vercel for hosting. **Everything is behind login; there are no public pages.**
+[Serper](https://serper.dev), shows them per client, and exports them in the CX Pulse upload layout. It runs as one
+self-managed server (Node, behind Caddy) with a managed PostgreSQL database: no third-party platform at runtime.
+**Everything is behind login; there are no public pages** (the only open routes are the sign-in pages, the email links and
+`/api/health`).
 
 Pages (menu order): **Overview** (`/`, KPIs and per-location table), **Dashboard** (`/dashboard`, built to the Healthway sample
 dashboard: Review Overview, Reputation, Sentiment and Review Intelligence tabs), **Extraction** (`/extraction`, add locations, extract, browse and export reviews), **Users**
-(`/admin/users`, approvals and client access). `/overview` redirects to `/`. See [CHANGELOG.md](CHANGELOG.md).
+(`/admin/users`, approvals and client access), and **User guide** (`/guide`, at the bottom of the sidebar: how to use every page, by role, with a guided tour; content in `src/lib/guide/sections.ts`, tour steps in `src/lib/guide/tour-steps.ts`; keep them in step when screens change). `/overview` redirects to `/`. See [CHANGELOG.md](CHANGELOG.md).
 
-## Setup
+## Setup (local development)
 
-### 1. Supabase
-1. Create a project at supabase.com.
-2. **Authentication → Providers → Email**: enabled. Leave "Confirm email" on (recommended).
-3. **Authentication → URL Configuration**: set Site URL to your app URL (`http://localhost:3000` locally, your Vercel URL in production) and add `<APP_URL>/login` to Redirect URLs.
-4. Run the migrations in order (SQL editor, or `supabase db push` with the CLI):
-   `supabase/migrations/0001` → `0002` → `0003` → `0004` → `0005` → `0006` → `0007` → `0008` → `0009` → `0010` → `0011` → `0012` → `0013` → `0014` → `0015` → `0016` → `0017` → `0018` → `0019` → `0020`.
-5. Copy the project URL, publishable key and the two Postgres connection strings (the **Connect** button; see `.env.example`) into `.env.local` (see `.env.example`).
+You need Node 24+ and a PostgreSQL 16+ server (Postgres.app works well on a Mac).
 
-### 2. Promote the first admin
-Sign up through the app and confirm your email, then run in the Supabase SQL editor (service role context):
+```bash
+cp .env.example .env.local                 # then fill in DATABASE_URL, DIRECT_URL, BETTER_AUTH_SECRET, APP_URL
+npm install
+npx prisma migrate deploy                  # creates the schema in an EMPTY database
+npm run dev                                # http://localhost:3000
+```
+
+With no `SMTP_HOST`, the confirmation and password-reset emails are printed in the terminal running `npm run dev`
+(the link is in the text), so you can sign up without a mail server.
+
+Optional, to work with a copy of the production data instead of an empty database: restore a clean dump of it into a
+scratch database and run `scripts/import-supabase.sh <source-url> <target-url> [auth-schema]` against the migrated
+target. It copies every table and every account with its existing password hash, then checks the counts. See the header of
+the script.
+
+### Promote the first admin
+Sign up through the app and confirm the email link, then run against the database:
 
 ```sql
 update public.profiles
@@ -29,57 +40,47 @@ where email = 'you@example.com';
 
 Every later account is created as `viewer` + `pending` and must be approved at `/admin/users`.
 
-### 3. Run locally
+### Serper
+Create an API key at serper.dev and set `SERPER_API_KEY`. Optional limits are listed in `.env.example`.
+
+### Tests
 ```bash
-cp .env.example .env.local   # fill in values
-npm install
-npm run dev
+npm test          # unit and component tests (no database needed)
+npm run test:db   # row level security, sign-in flows, /api/health: needs a Postgres; uses (and wipes) a *_test database
+npm run test:e2e  # browser tests (Playwright): sign-up to approval, sign-in, reset, access rules, extraction, exports, scheduler
+npm run check     # security audit of production dependencies, type check, lint, npm test
 ```
+`npm run test:db` rebuilds `gbp_dashboard_test` from the migrations on every run and refuses to touch a database whose
+name does not end in `_test`. Set `TEST_DATABASE_URL` to use another server.
 
-### 4. Vercel
-Import the repo, set the same environment variables (`APP_URL` = the production URL, required for the CSRF
-check), and deploy. For production rate limiting add an Upstash Redis database and set
-`UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`; without them an in-memory limiter is used, which is per
-serverless instance and only suitable for development.
+`npm run test:e2e` starts everything it needs: its own database (`gbp_dashboard_e2e_test`, rebuilt and seeded each run, local only), the app on port 3200 from a separate build folder (so a dev server you have open is not disturbed), and a stand-in for Serper (so no credits are ever spent). Emails are read from a file the app writes in development. First time only: `npx playwright install chromium`. On failure, screenshots and traces are in `test-results/` (`npx playwright show-trace <trace.zip>`).
 
-### 5. Serper
-Create an API key at serper.dev and set `SERPER_API_KEY` (locally and in Vercel). Optional limits are listed in
-`.env.example`.
+### Production
+One Lightsail instance runs the app (Next.js standalone build under systemd) behind Caddy, which terminates HTTPS and
+passes the caller's address in `X-Real-IP`; the database is a managed Lightsail PostgreSQL. A systemd timer calls
+`/api/cron/sync` every 15 minutes for automatic extraction. **The step-by-step guide is [deploy/RUNBOOK.md](deploy/RUNBOOK.md)**; the server files (Caddyfile, systemd units, `provision.sh`, `deploy.sh`, backup and rollback scripts) are in `deploy/`.
+HTTPS is required: session cookies are `secure` and the app sends HSTS.
 
-### 6. Automatic extraction (optional)
-An admin switches it on and picks a time (Manila time) on the Extraction page. Supabase pg_cron calls
-`/api/cron/sync` every 15 minutes; the first call at or after the chosen time starts that day's run (once a day), so
-it starts within 15 minutes of the time. A call that is not due only updates one row and returns. One-time setup:
-
-1. Vercel: set `CRON_SECRET` (`openssl rand -hex 32`) and `APP_URL` (the production URL), and redeploy.
-2. Supabase → SQL editor: apply migration `0018_auto_extract.sql`.
-3. Supabase → Database → Extensions: enable `pg_cron` and `pg_net`.
-4. Supabase → SQL editor (put in your real secret and URL; they are stored encrypted in Vault, not in the job):
-   ```sql
-   select vault.create_secret('<the CRON_SECRET value>', 'cron_secret');
-   select vault.create_secret('https://<your-app>.vercel.app', 'app_url');
-   select cron.schedule('auto-extract', '*/15 * * * *', $$
-     select net.http_get(
-       url := (select decrypted_secret from vault.decrypted_secrets where name = 'app_url') || '/api/cron/sync',
-       headers := jsonb_build_object('Authorization',
-         'Bearer ' || (select decrypted_secret from vault.decrypted_secrets where name = 'cron_secret')),
-       timeout_milliseconds := 60000)
-   $$);
-   ```
-5. Extraction page → Automatic extraction: switch on, pick the time, Save. Within 15 minutes the card shows
-   "Scheduler connected".
-
-To stop it, switch it off (the job keeps calling but nothing runs), or remove the job with
-`select cron.unschedule('auto-extract');`. Calls are listed in `cron.job_run_details` and `net._http_response`.
+### Automatic extraction (optional)
+An admin switches it on and picks a time (Manila time) on the Extraction page. The server's timer calls
+`/api/cron/sync` with `Authorization: Bearer $CRON_SECRET` every 15 minutes; the first call at or after the chosen time
+starts that day's run (once a day), so it starts within 15 minutes of the time. A call that is not due only updates one row
+and returns. Set `CRON_SECRET` (`openssl rand -hex 32`) and `APP_URL`, then on the Extraction page switch it on, pick the
+time and Save. Within 15 minutes the card shows "Scheduler connected". To stop it, switch it off (the timer keeps calling
+but nothing runs).
 
 ## Architecture notes
-- All data reads and writes go through Route Handlers in `app/api/**`; no server actions.
-- Every handler is wrapped by `withAuth({ roles, ... })` ([lib/api/with-auth.ts](lib/api/with-auth.ts)): CSRF/content-type → rate limit → session → profile → approval → role → zod parsing. `roles` is mandatory; an empty list throws at load time. `publicRoute` is the explicit opt-out for signup and login.
-- RLS is enabled on every table as a second layer; users cannot change their own role or status (no policy, plus a guard trigger).
-- The browser never talks to Supabase directly; session cookies are `httpOnly`, `SameSite=Lax`.
-- `proxy.ts` (Next 16's replacement for middleware) only redirects for UX; the API enforces the same rules independently.
-- **Prisma** is the query layer. The SQL migrations stay the source of truth for schema, triggers and RLS; `prisma/schema.prisma` mirrors them (check drift with `npx prisma db pull --print`; never run `migrate` or `db push`). Handlers query through `ctx.db(tx => ...)` ([lib/db/with-rls.ts](lib/db/with-rls.ts)), a transaction that switches to the `authenticated` role with the caller's JWT claims, so RLS still applies. The plain `getPrisma()` client bypasses RLS and is reserved for server-only extraction code and admin-checked writes.
-- Supabase Auth (via `@supabase/ssr`) still handles sessions. `proxy.ts` validates the session with Supabase and reads the profile through the same RLS-scoped Prisma path as the API.
+- All data reads and writes go through Route Handlers in `src/app/api/**`; no server actions.
+- Every handler is wrapped by `withAuth({ roles, ... })` ([src/server/api/with-auth.ts](src/server/api/with-auth.ts)): CSRF/content-type → rate limit → session → profile → approval → role → zod parsing. `roles` is mandatory; an empty list throws at load time. `publicRoute` is the explicit opt-out for signup, login and `/api/health`.
+- **Sign-in** is [Better Auth](https://www.better-auth.com) running inside the app with its tables in our database (`auth_user`, `auth_session`, `auth_account`, `auth_verification`). Only our own routes are exposed (`/api/auth/{login,signup,logout,forgot,reset-password}` and the email link `/auth/verify`); Better Auth's own HTTP handler is not mounted. Passwords are bcrypt. Sessions last 7 days and extend as they are used, on top of the 1-hour idle sign-out in the browser. A password reset revokes every session. Email confirmation is required before the first sign-in, and sign-up and "forgot password" answer the same way whether or not the address has an account.
+- **Authorization** lives in `profiles` (role admin / manager / viewer, status pending / approved / rejected, per-location and per-client access). A database trigger creates a pending viewer profile for every new account.
+- Row Level Security is enabled on every table as a second layer; users cannot change their own role, status or `can_extract` (no policy, plus a guard trigger). The Better Auth tables have no access for the app's user role at all.
+- **How RLS works here:** handlers query through `ctx.db(tx => ...)` ([src/server/db/with-rls.ts](src/server/db/with-rls.ts)), a transaction that switches to the no-login role `app_user` and sets `app.user_id` to the caller, so `app.uid()` and every policy apply. The plain `getPrisma()` client connects as the schema owner and bypasses RLS; it is reserved for server-only extraction code and admin-checked writes.
+- Session cookies are `httpOnly`, `SameSite=Lax`, `secure` in production.
+- `src/proxy.ts` (Next 16's replacement for middleware) only redirects for UX; the API enforces the same rules independently.
+- **Rate limits** (`rate-limiter-flexible`) are kept in memory in the single server process: they reset when it restarts, and the limits themselves are unchanged. The caller's address comes from `X-Real-IP`, which Caddy sets (the app listens on localhost only).
+- **Database schema** is managed by Prisma Migrate (`prisma/migrations/`). The SQL in those migrations is the source of truth for triggers, RLS policies and functions, which Prisma cannot model; `prisma/schema.prisma` is the query layer. Add a change with `npx prisma migrate dev --create-only`, edit the SQL, and always pass `DIRECT_URL` explicitly so you never point the CLI at the wrong database. The old Supabase migrations are kept for reference in `docs/legacy/`.
+- `GET /api/health` returns `{"data":{"status":"ok"}}` when the app can reach the database, `503` otherwise, with no details.
 - Server state: React Query. UI state only: Zustand.
 
 ## Clients and per-user access
@@ -87,7 +88,9 @@ To stop it, switch it off (the job keeps calling but nothing runs), or remove th
   name) on the Extraction page.
 - To limit a user to one client: Users → **Assign access** → pick that client. They see only its locations (and any
   added to it later); other locations return 404. Users can also be given individual locations.
-- Admins and managers can start extractions (managers only for their own locations); viewers browse and export.
+- Admins can start extractions, and so can viewers and managers an admin allows on the Users page (**Manual extraction**,
+  `profiles.can_extract`; only for their own locations). Everyone else sees when automatic extraction runs.
+  Only admins change automatic extraction.
 
 ## CSV export
 `GET /api/export/reviews` (**Export CSV** on the Extraction page's reviews table, the Overview and each location) downloads one CSV in the
@@ -111,7 +114,7 @@ location, rating and text search, the same as the reviews table. Max 100,000 row
 - **No duplicates:** every location is stored under its Maps place's CID, so the same place pasted again (as a share
   link, a `?cid=` link, a full place link or a bare CID) is recognised and skipped. Names are unique too (ignoring case
   and spacing): a different place whose name is taken is added as `Name (City)` or `Name (CID tail)`, and renaming a
-  location to a taken name is refused. The database enforces both rules (migration 0010), so two admins adding at the
+  location to a taken name is refused. The database enforces both rules (the baseline migration), so two admins adding at the
   same moment can't create a duplicate.
 - **Edit / delete** (admin): the pencil on each location opens one dialog for name, address, branch prefix, active
   switch and clients. The trash icon permanently deletes the location with its reviews, extraction history and
@@ -142,7 +145,7 @@ location, rating and text search, the same as the reviews table. Max 100,000 row
   count; Google's count includes rating-only reviews, so a small gap can be normal. Reviews deleted on Google stay.
 
 ## Dashboard
-Four tabs, all filtered by period (3/6/12/24 months or all time), client, region, island group, type and location, with
+Four tabs, all filtered by the Period (a date-range picker: presets such as Last 28 days or Last 12 months, custom days, or All time, the default; with optional Compare to dates: every tab then shows ▲ / ▼ changes and Reputation's charts draw both ranges; Review Overview adds a side-by-side comparison), client, region, island group, type and location, with
 the same access rules as the reviews table (the URL keeps the tab and filters, so a view can be shared):
 - **Review Overview:** profiles surfaced / with reviews / without, total reviews, weighted rating, Location Performance
   with a signal (Strong ≥ 4.5★, Stable 4.0–4.4, Watch 3.0–3.9, Priority < 3.0), largest review volumes, readout.
@@ -157,10 +160,10 @@ the same access rules as the reviews table (the URL keeps the tab and filters, s
   dates, labelled approx. Only the newest page of each location is re-read daily, so only new reviews can be measured.
 - **Sentiment / Review Intelligence:** reviews are sorted into themes (Waiting Time, Doctors / Care, Staff / Service,
   Billing, Facilities, Appointments / Contact, Diagnostics / Pharmacy, Positive Commendations) by English and Tagalog
-  keywords in [lib/insights/themes.ts](lib/insights/themes.ts); a mention's sentiment is the review's stars (4–5
+  keywords in [src/lib/insights/themes.ts](src/lib/insights/themes.ts); a mention's sentiment is the review's stars (4–5
   positive, 3 mixed, 1–2 negative). Edit the keyword lists to tune detection; everything is recalculated on the fly.
-  Thresholds live in [lib/insights/signals.ts](lib/insights/signals.ts), summaries in
-  [lib/insights/narrative.ts](lib/insights/narrative.ts). No AI or external service is used.
+  Thresholds live in [src/lib/insights/signals.ts](src/lib/insights/signals.ts), summaries in
+  [src/lib/insights/narrative.ts](src/lib/insights/narrative.ts). No AI or external service is used.
   On Review Intelligence, clicking a theme tile opens a side panel with every review that mentions it under the current
   filters, grouped by location (most negative first; most positive for Positive Commendations), with the theme's words
   highlighted, Negative / Mixed / Positive / All chips and a search box (`GET /api/insights/themes/reviews`). Its
@@ -169,10 +172,10 @@ the same access rules as the reviews table (the URL keeps the tab and filters, s
   workbook (`GET /api/insights/themes/export`): a **Summary** tab (filters used, then each location × theme with
   mentions, positive / mixed / negative % and level, led by "All locations") and **one tab per location** (worst
   first) with one row per review per theme: Ref No, Date (Manila), Stars, Theme, Sentiment, Judged from (words or
-  stars), Replied, Matched words, Review, Reviewer link. Written by `lib/export/xlsx.ts` (zipped with `fflate`).
+  stars), Replied, Matched words, Review, Reviewer link. Written by `src/lib/export/xlsx.ts` (zipped with `fflate`).
 
 **Regions** are the 18 official Philippine regions (NCR, CAR, I–XIII, IV-A, MIMAROPA, NIR, BARMM) with their island
-group ([lib/ph-regions.ts](lib/ph-regions.ts)). Set them in Extraction → Edit location, or click **Auto-fill regions**
+group ([src/lib/ph-regions.ts](src/lib/ph-regions.ts)). Set them in Extraction → Edit location, or click **Auto-fill regions**
 (free; detects from the address or branch name). Refresh Google totals also fills an empty address, region and type
 from Google. Values you set are never overwritten.
 
@@ -182,9 +185,9 @@ Signed-in users' browsers report in when the app opens and about once an hour (p
 ## Credits, sessions and security checks
 - Serper credits: each person may spend `SERPER_USER_DAILY_CREDIT_LIMIT` (default 200) per UTC day, within the shared
   `SERPER_DAILY_CREDIT_LIMIT`. Admins see each person's use in the Users page's Credits column.
-- Signed-in users are signed out after 1 hour without activity (warning 5 minutes before). For a server-side backstop,
-  also set Supabase Authentication → Sessions → Inactivity timeout (Pro plan).
-- Run `npm run check` before deploying (security audit of production dependencies, type check, lint). GitHub runs it on
+- Signed-in users are signed out after 1 hour without activity (warning 5 minutes before). The session itself lasts at
+  most 7 days from the last time it was used.
+- Run `npm run check` (and `npm run test:db`) before deploying. GitHub runs it on
   every push and weekly; Dependabot opens pull requests for outdated packages.
 - Pages use a nonce-based Content Security Policy (set in `proxy.ts`). If a new feature's script is blocked, the browser
   console and the server log (`[csp]`) say which.

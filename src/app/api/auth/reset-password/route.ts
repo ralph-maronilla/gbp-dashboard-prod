@@ -1,25 +1,13 @@
-import { withAuth } from "@/server/api/with-auth";
+import { publicRoute } from "@/server/api/with-auth";
 import { ok } from "@/server/api/response";
-import { ApiError, Errors } from "@/server/api/errors";
-import { RECOVERY_COOKIE } from "@/lib/auth-recovery";
-import { ROLES } from "@/lib/schemas/common";
 import { resetPasswordSchema } from "@/lib/schemas/auth";
+import { resetPassword } from "@/server/auth/service";
 
-/** Sets a new password for the signed-in user (the recovery link signs them in first). */
-export const POST = withAuth(
-  { roles: [ROLES[0], ROLES[1], ROLES[2]], requireApproved: false, body: resetPasswordSchema, rateLimit: { key: "reset-password", limit: 5, windowSec: 600 } },
-  async ({ ctx, body, req }) => {
-    // A stolen ordinary session must not be able to change the password: only the recovery link's session may.
-    if (!req.cookies.get(RECOVERY_COOKIE)) throw Errors.forbidden();
-    const { error } = await ctx.supabase.auth.updateUser({ password: body.password });
-    if (error) {
-      if (error.code === "weak_password") throw new ApiError(400, "BAD_REQUEST", "Password is too weak");
-      if (error.code === "same_password") throw new ApiError(400, "BAD_REQUEST", "Choose a password you have not used before");
-      throw new ApiError(400, "BAD_REQUEST", "Could not change the password");
-    }
-    await ctx.supabase.auth.signOut({ scope: "others" });
-    const res = ok({ ok: true });
-    res.cookies.delete({ name: RECOVERY_COOKIE, path: "/api/auth" });
-    return res;
+/** Sets a new password from the emailed token, and signs the account out everywhere. The user then signs in again. */
+export const POST = publicRoute(
+  { body: resetPasswordSchema, rateLimit: { key: "reset-password", limit: 5, windowSec: 600 } },
+  async ({ body, req }) => {
+    await resetPassword(body, req.headers);
+    return ok({ ok: true });
   },
 );

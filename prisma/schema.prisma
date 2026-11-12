@@ -1,6 +1,7 @@
-// Query-layer mirror of supabase/migrations (the SQL migrations remain the source of truth for
-// the schema, triggers, RLS policies and functions). Verify drift with `npx prisma db pull --print`.
-// Do NOT run `prisma migrate` or `prisma db push` against this database.
+// Query-layer mirror of prisma/migrations. The SQL in the baseline migration is the source of truth for
+// triggers, RLS policies, functions and the generated column; Prisma cannot model those.
+// Change the schema by adding a new migration (`npx prisma migrate dev --create-only`) and edit the SQL
+// by hand where needed. Always pass DIRECT_URL explicitly so you never point the CLI at the wrong database.
 
 generator client {
   provider = "prisma-client"
@@ -27,7 +28,7 @@ enum UserStatus {
   @@map("user_status")
 }
 
-// profiles.id references auth.users(id) (separate schema, not modelled here).
+// profiles.id references auth_user(id) (better_auth migration). The foreign key lives in SQL only; it is not modelled here.
 model profiles {
   id          String     @id @db.Uuid
   email       String
@@ -37,6 +38,8 @@ model profiles {
   created_at  DateTime   @default(now()) @db.Timestamptz(6)
   approved_by String?    @db.Uuid
   approved_at DateTime?  @db.Timestamptz(6)
+  // Allowed to run manual extractions (admins always are). Migration 0021.
+  can_extract Boolean    @default(false)
   // Heartbeat from the signed-in browser (touch_last_seen): about hourly and on app open.
   last_seen_at DateTime? @db.Timestamptz(6)
   last_path    String?
@@ -184,3 +187,66 @@ model audit_log {
   @@index([created_at(sort: Desc)])
 }
 
+
+// ---- Better Auth (identity only; authorization lives in `profiles`). Field names follow Better Auth's core schema. ----
+
+model user {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String
+  email         String    @unique
+  emailVerified Boolean   @default(false) @map("email_verified")
+  image         String?
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sessions      session[]
+  accounts      account[]
+
+  @@map("auth_user")
+}
+
+model session {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+  token     String   @unique
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  userId    String   @map("user_id") @db.Uuid
+  user      user     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("auth_session")
+}
+
+model account {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  userId                String    @map("user_id") @db.Uuid
+  user                  user      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  idToken               String?   @map("id_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at") @db.Timestamptz(3)
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at") @db.Timestamptz(3)
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([userId])
+  @@map("auth_account")
+}
+
+model verification {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([identifier])
+  @@map("auth_verification")
+}

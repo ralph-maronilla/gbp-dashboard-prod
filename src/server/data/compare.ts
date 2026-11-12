@@ -1,10 +1,11 @@
 import "server-only";
 import { Prisma } from "@/generated/prisma/client";
 import type { Tx } from "@/server/db/with-rls";
-import type { CompareFigures, CompareInsights, CompareLocation, CompareMonth, CompareQuery } from "@/lib/schemas/insights";
-import { insightScope, monthBounds, monthOf, monthRange } from "./insight-scope";
-
-const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+import { Errors } from "@/server/api/errors";
+import { startOfDayInZone } from "@/lib/export/reviews-csv";
+import { addDays, rangeDays, rangeLabel, todayIn, type DayRange } from "@/lib/insights/date-ranges";
+import type { CompareFigures, CompareInsights, CompareLocation, CompareQuery, CompareRange } from "@/lib/schemas/insights";
+import { insightScope } from "./insight-scope";
 const pct = (n: number, total: number) => (total > 0 ? Math.round((n / total) * 1000) / 10 : null);
 
 interface Counts {
@@ -26,18 +27,21 @@ const add = (into: Counts, c: Counts) => {
   into.low += c.low;
 };
 
+const side = (r: DayRange, today: string): CompareRange => ({ ...r, label: rangeLabel(r), days: rangeDays(r), partial: r.to === today });
+
 /**
- * Two calendar months side by side, per location and for the whole network (Review Overview with "Compare months" ticked). Without `a` and
- * `b`, the last full month against the month before it. The Period filter does not apply; the Client / Region / Island /
- * Type / Location filters do. Every location in scope is listed, with empty figures when it had no reviews.
+ * The Dashboard period and its comparison period side by side, per location and for the whole network (Review Overview
+ * with Compare on), like the Google Analytics comparison. The comparison is the period just before (same number of
+ * days, or whole months for month presets), the same dates a year earlier, or custom `vs_from`-`vs_to`. Days are in
+ * `timeZone`. All time cannot be compared. The Client / Region / Island / Type / Location filters apply. Every location
+ * in scope is listed, with empty figures when it had no reviews.
  */
 export async function getCompareInsights(tx: Tx, visibleIds: string[] | null, query: CompareQuery, timeZone: string, now = new Date()): Promise<CompareInsights> {
-  const sc = insightScope(visibleIds, { ...query, months: 0, granularity: "auto" }, timeZone, now);
-  const current = monthOf(now, timeZone);
-  const [before, last] = monthRange(now, 3, timeZone) as [string, string, string];
-  const a = query.a ?? (query.b === last ? before : last);
-  const b = query.b ?? (a === before ? last : before);
-  const label = (month: string): CompareMonth => ({ month, label: `${MONTH_NAMES[Number(month.slice(5)) - 1]} ${month.slice(0, 4)}`, partial: month === current });
+  const sc = insightScope(visibleIds, { ...query, granularity: "auto" }, timeZone, now);
+  const today = todayIn(timeZone, now);
+  if (!sc.period.range || !sc.prevRange) throw Errors.badRequest("All time has nothing to compare with: pick a date range first");
+  const a = side(sc.period.range, today);
+  const b = side(sc.prevRange, today);
 
   const empty: Counts = { reviews: 0, stars: 0, replied: 0, low: 0 };
   const network = { a: { ...empty }, b: { ...empty } };
@@ -45,7 +49,9 @@ export async function getCompareInsights(tx: Tx, visibleIds: string[] | null, qu
   let oldest: Date | null = null;
 
   if (sc.any) {
-    const [A, B] = [monthBounds(a, timeZone), monthBounds(b, timeZone)];
+    // From the start of the first day to the start of the day after the last (both in `timeZone`).
+    const bounds = (r: DayRange) => ({ from: startOfDayInZone(r.from, timeZone), to: startOfDayInZone(addDays(r.to, 1), timeZone) });
+    const [A, B] = [bounds(a), bounds(b)];
     const inA = Prisma.sql`r.create_time >= ${A.from} and r.create_time < ${A.to}`;
     const inB = Prisma.sql`r.create_time >= ${B.from} and r.create_time < ${B.to}`;
     const [rows, first] = await Promise.all([
@@ -82,10 +88,14 @@ export async function getCompareInsights(tx: Tx, visibleIds: string[] | null, qu
     oldest = first[0]?.oldest ?? null;
   }
 
-  // Every month from the oldest review to now (newest first), plus the two chosen ones in case they lie outside it.
-  const [ny, nm] = current.split("-").map(Number) as [number, number];
-  const span = oldest ? (() => { const [oy, om] = monthOf(oldest, timeZone).split("-").map(Number) as [number, number]; return (ny - oy) * 12 + (nm - om) + 1; })() : 3;
-  const months = [...new Set([...monthRange(now, Math.max(span, 3), timeZone), a, b])].sort().reverse();
-
-  return { a: label(a), b: label(b), network: { a: figures(network.a), b: figures(network.b) }, locations, available_months: months.map(label) };
+  return {
+    a,
+    b,
+    range: sc.period.preset,
+    vs: query.vs,
+    today,
+    oldest: oldest ? todayIn(timeZone, oldest) : null,
+    network: { a: figures(network.a), b: figures(network.b) },
+    locations,
+  };
 }

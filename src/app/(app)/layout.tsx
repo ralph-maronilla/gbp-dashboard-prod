@@ -22,6 +22,8 @@ import LightModeIcon from "@mui/icons-material/LightMode";
 import MenuIcon from "@mui/icons-material/Menu";
 import { BrandMark } from "@/components/brand-mark";
 import { Sidebar } from "@/components/sidebar";
+import { Tour } from "@/components/tour/tour";
+import { useTourStore } from "@/lib/store/tour-store";
 import { useHeartbeat, useIdleLogout, useLogout, useMe } from "@/lib/client/hooks";
 import { useUiStore } from "@/lib/store/ui-store";
 
@@ -36,6 +38,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const setSidebarOpen = useUiStore((s) => s.setSidebarOpen);
   const [mobileOpen, setMobileOpen] = useState(false);
   const isDesktop = useMediaQuery(useTheme().breakpoints.up("md"));
+  // The tour opens the sidebar while one of its steps points at it.
+  const tourTarget = useTourStore((s) => s.target);
+  const tourSidebar = tourTarget === "nav" || tourTarget === "nav-users" || tourTarget === "guide";
 
   return (
     <Box sx={{ minHeight: "100dvh" }}>
@@ -101,8 +106,9 @@ export default function AppLayout({ children }: { children: ReactNode }) {
       <Box sx={{ display: "flex" }}>
         <Sidebar
           role={me.data?.role}
-          desktopOpen={sidebarOpen}
-          mobileOpen={mobileOpen}
+          desktopOpen={sidebarOpen || tourSidebar}
+          mobileOpen={mobileOpen || (!isDesktop && tourSidebar)}
+          trapFocus={!tourSidebar}
           onMobileClose={() => setMobileOpen(false)}
         />
         <Box component="main" sx={{ flexGrow: 1, minWidth: 0 }}>
@@ -112,6 +118,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           </Container>
         </Box>
       </Box>
+      <Tour />
     </Box>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Alert from "@mui/material/Alert";
 import Chip from "@mui/material/Chip";
 import Grid from "@mui/material/Grid";
@@ -13,7 +13,9 @@ import { DataTable, type Column, type SortState } from "@/components/ui/data-tab
 import { CountBarChart } from "@/components/ui/simple-charts";
 import { ToggleSelect } from "@/components/ui/toggle-select";
 import { HELP, overviewKpiHelp, ratingRule } from "@/lib/insights/help";
-import type { LocationPerformance, OverviewInsights } from "@/lib/schemas/insights";
+import { changeBetween, enoughReviews } from "@/lib/insights/compare";
+import type { LocationPerformance, OverviewInsights, WithCompare } from "@/lib/schemas/insights";
+import { VsChange } from "./change-text";
 import { BulletList, SectionCard } from "./section-card";
 import { SignalText } from "./signal";
 
@@ -22,7 +24,7 @@ type Shown = LocationPerformance & { fromGoogle: boolean };
 
 export type OverviewSource = "google" | "extracted";
 
-export function OverviewTab({ data, source, onSource }: { data: OverviewInsights; source: OverviewSource; onSource: (s: OverviewSource) => void }) {
+export function OverviewTab({ data, source, onSource }: { data: WithCompare<OverviewInsights>; source: OverviewSource; onSource: (s: OverviewSource) => void }) {
   const [sort, setSort] = useState<SortState & { key: SortKey }>({ key: "reviews", dir: "desc" });
   const google = source === "google";
   // In the Google view, refreshed locations show Google's public figures; the rest keep their extracted figures (marked).
@@ -34,6 +36,10 @@ export function OverviewTab({ data, source, onSource }: { data: OverviewInsights
     [data.locations, google],
   );
   const totals = google ? data.google : data;
+  // Compare to: extracted figures only (Google totals have no dates).
+  const b = google ? null : (data.compare?.data ?? null);
+  const bLoc = useMemo(() => new Map((b?.locations ?? []).map((l) => [l.id, l])), [b]);
+  const stars = (v: number | null) => (v === null ? "-" : `${v.toFixed(2)}★`);
   const kpiHelp = overviewKpiHelp(source);
   const readout = google ? data.google.readout : data.readout;
   const rows = useMemo(() => {
@@ -69,9 +75,39 @@ export function OverviewTab({ data, source, onSource }: { data: OverviewInsights
       align: "right",
       cellSx: { fontWeight: 600 },
       // Same precision as the signal: Google gives one decimal, our averages two (4.47 is Stable, not "4.5").
-      cell: (l) => (l.avg_rating === null ? "-" : l.avg_rating.toFixed(l.fromGoogle ? 1 : 2)),
+      cell: (l) => {
+        const was = bLoc.get(l.id);
+        return (
+          <>
+            {l.avg_rating === null ? "-" : l.avg_rating.toFixed(l.fromGoogle ? 1 : 2)}
+            {was && (
+              <Typography component="div" variant="caption" sx={{ fontWeight: 400, display: "flex", justifyContent: "flex-end" }}>
+                <VsChange block={false} change={changeBetween("stars", "up", l.avg_rating, was.avg_rating, enoughReviews(l.reviews, was.reviews))} was={stars(was.avg_rating)} />
+              </Typography>
+            )}
+          </>
+        );
+      },
     },
-    { key: "reviews", label: "Reviews", info: kpiHelp.total_reviews, align: "right", cell: (l) => l.reviews.toLocaleString() },
+    {
+      key: "reviews",
+      label: "Reviews",
+      info: kpiHelp.total_reviews,
+      align: "right",
+      cell: (l) => {
+        const was = bLoc.get(l.id);
+        return (
+          <>
+            {l.reviews.toLocaleString()}
+            {was && (
+              <Typography component="div" variant="caption" sx={{ display: "flex", justifyContent: "flex-end" }}>
+                <VsChange volume block={false} change={changeBetween("count", "up", l.reviews, was.reviews)} was={was.reviews.toLocaleString()} />
+              </Typography>
+            )}
+          </>
+        );
+      },
+    },
     {
       key: "signal",
       label: "Signal",
@@ -91,12 +127,37 @@ export function OverviewTab({ data, source, onSource }: { data: OverviewInsights
         ),
     },
   ];
-  const kpis: [string, string, string][] = [
-    [totals.profiles.toLocaleString(), "Profiles surfaced", kpiHelp.profiles],
-    [totals.profiles_with_reviews.toLocaleString(), "Profiles with reviews", kpiHelp.with_reviews],
-    [totals.total_reviews.toLocaleString(), "Total reviews", kpiHelp.total_reviews],
-    [totals.weighted_rating === null ? "-" : `${totals.weighted_rating.toFixed(2)} / 5`, "Weighted rating", kpiHelp.weighted_rating],
-    [totals.profiles_without_reviews.toLocaleString(), "Profiles with no reviews", kpiHelp.without_reviews],
+  const kpis: [string, string, string, ReactNode][] = [
+    [totals.profiles.toLocaleString(), "Profiles surfaced", kpiHelp.profiles, null],
+    [
+      totals.profiles_with_reviews.toLocaleString(),
+      "Profiles with reviews",
+      kpiHelp.with_reviews,
+      b && <VsChange volume change={changeBetween("count", "up", totals.profiles_with_reviews, b.profiles_with_reviews)} was={b.profiles_with_reviews.toLocaleString()} />,
+    ],
+    [
+      totals.total_reviews.toLocaleString(),
+      "Total reviews",
+      kpiHelp.total_reviews,
+      b && <VsChange volume change={changeBetween("count", "up", totals.total_reviews, b.total_reviews)} was={b.total_reviews.toLocaleString()} />,
+    ],
+    [
+      totals.weighted_rating === null ? "-" : `${totals.weighted_rating.toFixed(2)} / 5`,
+      "Weighted rating",
+      kpiHelp.weighted_rating,
+      b && (
+        <VsChange
+          change={changeBetween("stars", "up", totals.weighted_rating, b.weighted_rating, enoughReviews(totals.total_reviews, b.total_reviews))}
+          was={stars(b.weighted_rating)}
+        />
+      ),
+    ],
+    [
+      totals.profiles_without_reviews.toLocaleString(),
+      "Profiles with no reviews",
+      kpiHelp.without_reviews,
+      b && <VsChange volume change={changeBetween("count", "down", totals.profiles_without_reviews, b.profiles_without_reviews)} was={b.profiles_without_reviews.toLocaleString()} />,
+    ],
   ];
 
   return (
@@ -112,7 +173,7 @@ export function OverviewTab({ data, source, onSource }: { data: OverviewInsights
           {google
             ? data.google.refreshed === 0
               ? "No location has Google totals yet: an admin can click Refresh Google totals on the Extraction page. Extracted figures are shown meanwhile."
-              : `Google's public rating and review count, as of ${new Date(data.google.oldest_checked_at as string).toLocaleDateString()} or later (${data.google.refreshed} of ${data.profiles} locations refreshed${data.google.refreshed < data.profiles ? "; the others show extracted figures, marked *" : ""}). The period filter does not apply to Google totals.`
+              : `Google's public rating and review count, as of ${new Date(data.google.oldest_checked_at as string).toLocaleDateString()} or later (${data.google.refreshed} of ${data.profiles} locations refreshed${data.google.refreshed < data.profiles ? "; the others show extracted figures, marked *" : ""}). The period filter does not apply to Google totals${data.compare ? ", so changes against Compare to are shown under Extracted reviews" : ""}.`
             : "Reviews stored by this app for the selected period."}
         </Typography>
       </Grid>
@@ -125,9 +186,9 @@ export function OverviewTab({ data, source, onSource }: { data: OverviewInsights
           </Alert>
         </Grid>
       )}
-      {kpis.map(([value, label, info]) => (
+      {kpis.map(([value, label, info, change]) => (
         <Grid key={label} size={{ xs: 6, sm: 4, md: 2.4 }}>
-          <KpiCard value={value} label={label} info={info} />
+          <KpiCard value={value} label={label} info={info} change={change} />
         </Grid>
       ))}
 

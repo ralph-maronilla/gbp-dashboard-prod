@@ -1,6 +1,5 @@
 import "server-only";
-import { Ratelimit } from "@upstash/ratelimit";
-import { Redis } from "@upstash/redis";
+import { RateLimiterMemory } from "rate-limiter-flexible";
 
 export interface RateLimitRule {
   /** Namespace, e.g. "login" or "admin". */
@@ -9,66 +8,42 @@ export interface RateLimitRule {
   windowSec: number;
 }
 
-/** Sign-in and account routes: when the shared limiter is down these are refused rather than left unlimited. */
-const FAIL_CLOSED = new Set(["login-ip", "login-email", "signup", "forgot-ip", "forgot-email", "reset-password"]);
+// One app server process, so the counters live in memory. They reset when the server restarts, which only ever lets
+// an attacker try again, never locks anyone out. (Behind several servers this would need a shared store.)
+const limiters = new Map<string, RateLimiterMemory>();
 
-// Upstash when configured (shared across serverless instances); in-memory otherwise (dev only: per instance).
-const redis =
-  process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN
-    ? new Redis({
-        url: process.env.UPSTASH_REDIS_REST_URL,
-        token: process.env.UPSTASH_REDIS_REST_TOKEN,
-      })
-    : null;
-
-const upstashLimiters = new Map<string, Ratelimit>();
-const memoryHits = new Map<string, number[]>();
-let warnedNoRedis = false;
-
-function upstashFor(rule: RateLimitRule): Ratelimit {
+function limiterFor(rule: RateLimitRule): RateLimiterMemory {
   const id = `${rule.key}:${rule.limit}:${rule.windowSec}`;
-  let limiter = upstashLimiters.get(id);
+  let limiter = limiters.get(id);
   if (!limiter) {
-    limiter = new Ratelimit({
-      redis: redis!,
-      limiter: Ratelimit.slidingWindow(rule.limit, `${rule.windowSec} s`),
-      prefix: `rl:${rule.key}`,
-    });
-    upstashLimiters.set(id, limiter);
+    limiter = new RateLimiterMemory({ keyPrefix: rule.key, points: rule.limit, duration: rule.windowSec });
+    limiters.set(id, limiter);
   }
   return limiter;
 }
 
-/** Returns true when the request is allowed. `identity` is an IP or a user id. */
+/** Returns true when the request is allowed. `identity` is an IP, an email or a user id. */
 export async function allowRequest(rule: RateLimitRule, identity: string): Promise<boolean> {
-  if (redis) {
-    try {
-      return (await upstashFor(rule).limit(identity)).success;
-    } catch {
-      // A limiter outage must not take the whole app down (auth checks still apply), except where it guards sign-in.
-      return !FAIL_CLOSED.has(rule.key);
+  try {
+    await limiterFor(rule).consume(identity);
+    return true;
+  } catch (rejected) {
+    // rate-limiter-flexible rejects with a RateLimiterRes when the limit is hit (and with an Error on a real fault).
+    if (rejected instanceof Error) {
+      console.error("[rate-limit] limiter error:", rejected.message);
+      return false; // fail closed: an unexpected fault must not switch the limit off
     }
-  }
-  if (process.env.NODE_ENV === "production" && !warnedNoRedis) {
-    warnedNoRedis = true;
-    console.warn("[rate-limit] UPSTASH_REDIS_REST_URL/TOKEN not set: limits are per server instance and weak on serverless. Set them.");
-  }
-  const now = Date.now();
-  const id = `${rule.key}:${identity}`;
-  const recent = (memoryHits.get(id) ?? []).filter((t) => now - t < rule.windowSec * 1000);
-  if (recent.length >= rule.limit) {
-    memoryHits.set(id, recent);
     return false;
   }
-  recent.push(now);
-  memoryHits.set(id, recent);
-  if (memoryHits.size > 10_000) memoryHits.clear(); // crude bound for long-lived dev servers
-  return true;
 }
 
-/** The caller's address from the header the platform sets itself; X-Forwarded-For is client-controlled behind any other proxy. */
+/**
+ * The caller's address. In production the app listens only on localhost behind Caddy, which sets X-Real-IP to the real
+ * peer address and overwrites anything the client sent, so that header can be trusted. X-Forwarded-For is
+ * client-controlled and is only read in development, where there is no proxy.
+ */
 export function clientIp(req: Request): string {
-  const trusted = req.headers.get("x-vercel-forwarded-for") ?? req.headers.get("x-real-ip");
-  if (trusted) return trusted.split(",")[0].trim();
+  const real = req.headers.get("x-real-ip");
+  if (real) return real.split(",")[0].trim();
   return process.env.NODE_ENV === "production" ? "unknown" : req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
 }

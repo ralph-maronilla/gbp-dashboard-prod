@@ -10,7 +10,7 @@ import { useCallback, useSyncExternalStore } from "react";
 const CHANGE = "stored-preference";
 const memory = new Map<string, string>();
 
-function read(key: string): string | null {
+export function readStored(key: string): string | null {
   try {
     return localStorage.getItem(key) ?? memory.get(key) ?? null;
   } catch {
@@ -28,18 +28,17 @@ function subscribe(onChange: () => void) {
 }
 
 export function useStoredString(key: string): [string | null, (value: string) => void] {
-  const value = useSyncExternalStore(subscribe, () => read(key), () => null);
-  const set = useCallback(
-    (next: string) => {
-      memory.set(key, next);
-      try {
-        localStorage.setItem(key, next);
-      } catch {
-        // storage blocked: kept in memory for this tab
-      }
-      window.dispatchEvent(new Event(CHANGE));
-    },
-    [key],
-  );
+  const value = useSyncExternalStore(subscribe, () => readStored(key), () => null);
+  const set = useCallback((next: string) => writeStored(key, next), [key]);
   return [value, set];
+}
+
+export function writeStored(key: string, value: string) {
+  memory.set(key, value);
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // storage blocked: kept in memory for this tab
+  }
+  window.dispatchEvent(new Event(CHANGE));
 }

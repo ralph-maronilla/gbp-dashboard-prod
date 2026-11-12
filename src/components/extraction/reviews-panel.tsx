@@ -230,7 +230,7 @@ export function ReviewsPanel({ filter, onFilterChange }: Props) {
         <Typography variant="h6">
           Reviews{reviews.data ? ` (${reviews.data.total.toLocaleString()})` : ""}
         </Typography>
-        <Stack direction="row" spacing={1}>
+        <Stack direction="row" spacing={1} data-tour="reviews-export">
           <Button variant="outlined" startIcon={<ViewColumnOutlinedIcon />} onClick={(e) => setColumnsMenu(e.currentTarget)} aria-haspopup="menu">
             Columns
           </Button>
@@ -256,7 +256,7 @@ export function ReviewsPanel({ filter, onFilterChange }: Props) {
         ))}
       </Menu>
 
-      <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} useFlexGap sx={{ mb: 2, flexWrap: "wrap" }}>
+      <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} useFlexGap sx={{ mb: 2, flexWrap: "wrap" }} data-tour="reviews-filters">
         <TextField size="small" label={SEARCH_LABEL[filter.searchIn]} value={search} onChange={(e) => setSearch(e.target.value)} sx={{ minWidth: 220 }} />
         <SelectField label="Client" value={filter.groupId} width={170} options={groupOptions(groups.data, "All clients")} onChange={(groupId) => set({ groupId })} />
         <SelectField label="Type" value={filter.locationType} width={170} options={typeOptions} onChange={(locationType) => set({ locationType })} />

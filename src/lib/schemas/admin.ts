@@ -15,6 +15,7 @@ export const updateUserSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("approve") }),
   z.object({ action: z.literal("reject") }),
   z.object({ action: z.literal("set_role"), role: roleSchema }),
+  z.object({ action: z.literal("set_can_extract"), value: z.boolean() }),
 ]);
 export type UpdateUserInput = z.infer<typeof updateUserSchema>;
 
@@ -30,6 +31,7 @@ export const adminUserSchema = z.object({
   full_name: z.string().nullable(),
   role: roleSchema,
   status: statusSchema,
+  can_extract: z.boolean(),
   created_at: z.string(),
   approved_at: z.string().nullable(),
   last_seen_at: z.string().nullable(),

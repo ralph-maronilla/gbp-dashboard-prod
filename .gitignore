@@ -34,8 +34,6 @@ yarn-error.log*
 .env*
 !.env.example
 
-# vercel
-.vercel
 
 # typescript
 *.tsbuildinfo
@@ -79,3 +77,9 @@ next-env.d.ts
 
 # nested clone created by GitHub Desktop
 /gbp-dashboard-prod/
+
+# playwright
+/.next-e2e/
+/test-results/
+/playwright-report/
+/tests/e2e/.tmp/

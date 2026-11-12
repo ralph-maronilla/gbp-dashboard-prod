@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { COMPARE_MODE_KEYS, isDay, RANGE_PRESET_KEYS, type CompareMode, type DayRange, type RangePreset } from "@/lib/insights/date-ranges";
 import { uuidSchema } from "./common";
 import type { Signal } from "@/lib/insights/signals";
 import type { Sentiment } from "@/lib/insights/sentiment";
@@ -13,13 +14,26 @@ export const UNASSIGNED = "__unassigned";
 
 const label = z.string().trim().min(1).max(50);
 
-/** Filters shared by every Dashboard tab. */
+const daySchema = z.string().refine(isDay, "Use a date, YYYY-MM-DD");
+
+/**
+ * Filters shared by every Dashboard tab. The period is a preset `range` or custom `from`-`to` days (Manila time); `months`
+ * is still accepted from old links (-1 last month, 3, 6, 12, 24, 0 all time). Without any, All time. `vs` (with
+ * `vs_from`-`vs_to` for custom) is the comparison period: the Reputation highlights compare against it and the Review
+ * Overview comparison shows it. Ranges are checked and resolved in lib/data/insight-scope.ts (resolveInsightPeriod).
+ */
 export const insightsQuerySchema = z.object({
+  range: z.enum(RANGE_PRESET_KEYS).optional(),
+  from: daySchema.optional(),
+  to: daySchema.optional(),
   months: z.coerce
     .number()
     .int()
     .refine((n) => (INSIGHT_PERIODS as readonly number[]).includes(n), "Use -1 (last month), 3, 6, 12, 24 or 0 (all time)")
-    .default(12),
+    .optional(),
+  vs: z.enum(COMPARE_MODE_KEYS).optional(),
+  vs_from: daySchema.optional(),
+  vs_to: daySchema.optional(),
   group_id: uuidSchema.optional(),
   location_id: uuidSchema.optional(),
   /** Region code (lib/ph-regions.ts) or UNASSIGNED. */
@@ -31,14 +45,22 @@ export const insightsQuerySchema = z.object({
 });
 export type InsightsQuery = z.output<typeof insightsQuerySchema>;
 
-/** A calendar month, "YYYY-MM". */
-const monthSchema = z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, "Use YYYY-MM");
+/**
+ * The Compare-to side of a Dashboard tab (lib/data/insight-scope.ts withCompare): the same data for the compared dates.
+ * Null without Compare to, or for All time.
+ */
+export interface CompareSide<T> {
+  /** "Sep 1 – 30, 2026". */
+  label: string;
+  range: DayRange;
+  /** The two ranges have the same number of days; otherwise counts (volumes) differ just by length. */
+  same_length: boolean;
+  data: T;
+}
+export type WithCompare<T> = T & { compare?: CompareSide<T> | null };
 
-/** Month comparison (Review Overview, "Compare months"): two months (default: the last full month and the one before it) and the shared location filters. */
-export const compareQuerySchema = insightsQuerySchema
-  .omit({ months: true, granularity: true })
-  .extend({ a: monthSchema.optional(), b: monthSchema.optional() })
-  .refine((q) => !q.a || !q.b || q.a !== q.b, { message: "Choose two different months", path: ["b"] });
+/** Review Overview comparison: the Dashboard period against `vs` (default: the period just before it). */
+export const compareQuerySchema = insightsQuerySchema.omit({ granularity: true }).extend({ vs: z.enum(COMPARE_MODE_KEYS).default("previous") });
 export type CompareQuery = z.output<typeof compareQuerySchema>;
 
 /** Area and segment follow the Healthway sample dashboard (lib/ph-regions.ts AREA_ORDER, SEGMENT_ORDER). */
@@ -147,6 +169,12 @@ export interface StatusCard {
   title: string;
   signal: Signal;
   detail: string;
+  /**
+   * The card's figure, for changes against Compare to: profiles with reviews, average rating, reply %, days to reply,
+   * unreplied 1-2★ reviews. Null when there is none. `reviews` = reviews behind it (ratings and rates need enough).
+   */
+  value: number | null;
+  reviews: number;
 }
 
 export interface GroupPerformance {
@@ -226,22 +254,29 @@ export interface CompareLocation {
   b: CompareFigures;
 }
 
-export interface CompareMonth {
-  /** "YYYY-MM". */
-  month: string;
-  /** "Sep 2026". */
+/** One side of the comparison: days in Manila time, both ends included. */
+export interface CompareRange {
+  from: string;
+  to: string;
+  /** "Oct 14 – Nov 10, 2026". */
   label: string;
-  /** The current month: not finished, so its volume is not comparable. */
+  days: number;
+  /** Includes today: not finished, so its volume is not comparable. */
   partial: boolean;
 }
 
 export interface CompareInsights {
-  a: CompareMonth;
-  b: CompareMonth;
+  a: CompareRange;
+  b: CompareRange;
+  /** The preset `a` came from (null = custom dates) and how `b` was chosen, as resolved. */
+  range: RangePreset | null;
+  vs: CompareMode;
+  /** Today in Manila time (the last day that can be picked). */
+  today: string;
+  /** Day of the first review in scope (null = none), the first day worth picking. */
+  oldest: string | null;
   network: { a: CompareFigures; b: CompareFigures };
   locations: CompareLocation[];
-  /** Every month from the oldest review in scope to the current one, newest first. */
-  available_months: CompareMonth[];
 }
 
 export interface ThemeInsights {

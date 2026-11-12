@@ -1,11 +1,12 @@
-import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { env } from "@/server/env";
+import { getSessionWithCookies } from "@/server/auth/service";
 import { withRls } from "@/server/db/with-rls";
 
 const AUTH_PAGES = ["/login", "/signup", "/forgot-password"];
-/** Reachable without a session: the recovery email link lands here before it has signed anyone in. */
-const OPEN_PATHS = [...AUTH_PAGES, "/auth/callback"];
+/** Reachable without a session (the signed-out pages). */
+const OPEN_PATHS = AUTH_PAGES;
+/** Reachable by anyone, signed in or not: the email links. A signed-in pending user must still be able to use them. */
+const EMAIL_LINK_PATHS = ["/reset-password", "/auth/verify"];
 
 const isDev = process.env.NODE_ENV !== "production";
 
@@ -42,8 +43,8 @@ export async function proxy(request: NextRequest) {
 
 /**
  * UX-level gate only. API handlers enforce the same rules independently (withAuth).
- *  - no session           → /login (except /login, /signup, /forgot-password, /auth/callback)
- *  - /reset-password      → needs the session the recovery link creates (no session → /login)
+ *  - email links          → always pass (/reset-password?token=…, /auth/verify?token=…)
+ *  - no session           → /login (except /login, /signup, /forgot-password)
  *  - pending / rejected   → /pending-approval
  *  - approved             → proceeds; auth pages bounce to /; /admin/* needs role admin
  */
@@ -54,34 +55,32 @@ async function gate(request: NextRequest, csp: string) {
     headers.set("Content-Security-Policy", csp);
     return NextResponse.next({ request: { headers } });
   };
-  let response = pass();
-
-  const supabase = createServerClient(env.supabaseUrl, env.supabaseAnonKey, {
-    cookieOptions: { sameSite: "lax", secure: env.isProd, httpOnly: true, path: "/" },
-    cookies: {
-      getAll: () => request.cookies.getAll(),
-      setAll: (toSet) => {
-        for (const { name, value } of toSet) request.cookies.set(name, value);
-        response = pass();
-        for (const { name, value, options } of toSet) response.cookies.set(name, value, options);
-      },
-    },
-  });
+  const response = pass();
 
   const redirect = (path: string) => {
     const res = NextResponse.redirect(new URL(path, request.url));
-    for (const c of response.cookies.getAll()) res.cookies.set(c); // keep refreshed session cookies
+    for (const c of response.headers.getSetCookie()) res.headers.append("set-cookie", c); // keep the refreshed session cookie
     return res;
   };
 
   const path = request.nextUrl.pathname;
-  const { data } = await supabase.auth.getUser();
+  if (EMAIL_LINK_PATHS.includes(path)) return response;
 
-  if (!data.user) {
+  let session;
+  try {
+    session = await getSessionWithCookies(request.headers);
+  } catch (err) {
+    console.error("[proxy] session lookup failed:", err instanceof Error ? err.message : "unknown error");
+    return new NextResponse("Service temporarily unavailable. Please try again.", { status: 503 });
+  }
+  // The session slides forward on use; pass the refreshed cookie to the browser or its 7 days would never extend.
+  for (const c of session.setCookies) response.headers.append("set-cookie", c);
+
+  if (!session.user) {
     return OPEN_PATHS.includes(path) ? response : redirect("/login");
   }
 
-  const userId = data.user.id;
+  const userId = session.user.id;
   let profile: { role: string; status: string } | null;
   try {
     // Same RLS-scoped Prisma path as the API handlers (Next 16 proxy runs on the Node runtime).

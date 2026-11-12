@@ -8,10 +8,12 @@ import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { AutoExtractCard } from "@/components/extraction/auto-extract-card";
+import { AutoExtractInfo } from "@/components/extraction/auto-extract-info";
 import { LocationsPanel } from "@/components/extraction/locations-panel";
 import { ReviewsPanel } from "@/components/extraction/reviews-panel";
 import { EMPTY_REVIEW_FILTER, parseReviewFilter, reviewFilterQuery, type ReviewFilterState } from "@/components/extraction/review-filter";
 import { useExtractStatus, useMe } from "@/lib/client/hooks";
+import { canExtract } from "@/lib/schemas/common";
 
 function Loading() {
   return (
@@ -49,8 +51,8 @@ function useReviewFilter() {
 function ExtractionView() {
   const me = useMe();
   const role = me.data?.role;
-  const canExtract = role === "admin" || role === "manager";
-  const status = useExtractStatus(canExtract);
+  const allowed = canExtract(me.data);
+  const status = useExtractStatus(allowed);
   const [filter, setFilter] = useReviewFilter();
 
   const showReviews = useCallback((locationId: string) => {
@@ -66,7 +68,7 @@ function ExtractionView() {
         <Typography variant="h5" component="h1">
           Extraction
         </Typography>
-        {canExtract && status.data && (
+        {allowed && status.data && (
           status.data.configured ? (
             <Stack direction="row" spacing={1}>
               <Chip
@@ -88,9 +90,9 @@ function ExtractionView() {
         )}
       </Stack>
 
-      {role === "admin" && <AutoExtractCard />}
+      {role === "admin" ? <AutoExtractCard /> : <AutoExtractInfo canExtract={allowed} />}
 
-      <LocationsPanel role={role} onShowReviews={showReviews} />
+      <LocationsPanel role={role} canExtract={allowed} onShowReviews={showReviews} />
 
       <div id="reviews">
         <ReviewsPanel filter={filter} onFilterChange={setFilter} />

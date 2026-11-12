@@ -3,7 +3,19 @@ import { Prisma } from "@/generated/prisma/client";
 import { startOfDayInZone } from "@/lib/export/reviews-csv";
 import type { Tx } from "@/server/db/with-rls";
 import { areaOf, PH_REGIONS } from "@/lib/ph-regions";
-import { LAST_MONTH, UNASSIGNED, type GroupBy, type InsightsQuery } from "@/lib/schemas/insights";
+import { Errors } from "@/server/api/errors";
+import {
+  addDays,
+  comparedRange,
+  presetMonths,
+  rangeDays,
+  rangeLabel,
+  resolvePeriod,
+  todayIn,
+  type DayRange,
+  type Period,
+} from "@/lib/insights/date-ranges";
+import { UNASSIGNED, type CompareSide, type GroupBy, type InsightsQuery } from "@/lib/schemas/insights";
 
 /** "YYYY-MM" of `date` in `timeZone`. */
 export function monthOf(date: Date, timeZone: string): string {
@@ -29,15 +41,69 @@ export interface InsightScope {
   review: Prisma.Sql;
   /** Start of the period, or null for all time. */
   from: Date | null;
-  /** End of the period (exclusive); null = now. Set only for LAST_MONTH. */
+  /** End of the period (exclusive); null = now (the period runs to today, or all time). */
   to: Date | null;
-  /** The period of the same length just before this one, for comparisons; null for all time. */
+  /** The comparison period (the chosen `vs`, else the period just before); null for all time. */
   prev: { from: Date; to: Date } | null;
+  period: Period;
+  /** The comparison period as days, and how the highlights name it ("the previous 12 months", "Sep 1 – 30, 2026"). */
+  prevRange: DayRange | null;
+  prevLabel: string | null;
+  /** Length of a bounded period in months (whole months for month presets), for per-month rates; null when open-ended. */
+  lengthMonths: number | null;
 }
 
-/** First day of the month `offset` months from the current one ("YYYY-MM-01" in `timeZone`, as a Date). */
-const monthStart = (now: Date, offset: number, timeZone: string) =>
-  startOfDayInZone(`${monthRange(now, 1 - offset, timeZone)[0]}-01`, timeZone);
+const MAX_DAYS = 5 * 366;
+
+/**
+ * Server-side options on a Dashboard query (never from the URL). `wholeRange`: count a period that runs to today as a
+ * closed range (its figures cover the whole period, not "the last 30 / 90 days"), so it compares like for like with a
+ * past range. `noCompare`: this query is itself the compared side; it has nothing to compare with.
+ */
+export interface ScopeOptions {
+  wholeRange?: boolean;
+  noCompare?: boolean;
+}
+type Scoped = { _scope?: ScopeOptions };
+const optionsOf = (query: object): ScopeOptions => (query as Scoped)._scope ?? {};
+
+/**
+ * The Dashboard period of a request and what it is compared with, in `timeZone` days. Rejects ranges with one end, ends
+ * before starts, after today, or longer than five years, and custom comparisons without both dates.
+ */
+export function resolveInsightPeriod(query: InsightsQuery, timeZone: string, now = new Date()) {
+  const today = todayIn(timeZone, now);
+  if (!query.from !== !query.to) throw Errors.badRequest("Give both `from` and `to`");
+  const period = resolvePeriod(query, today);
+  const check = (r: DayRange, what: string) => {
+    if (r.from > r.to) throw Errors.badRequest(`The ${what} must not end before it starts`);
+    if (r.to > today) throw Errors.badRequest(`The ${what} cannot end after today (${today})`);
+    if (rangeDays(r) > MAX_DAYS) throw Errors.badRequest(`The ${what} can be at most five years long`);
+  };
+  if (period.range) check(period.range, "date range");
+
+  let prevRange: DayRange | null = null;
+  let prevLabel: string | null = null;
+  if (optionsOf(query).noCompare) {
+    // The compared side of withCompare: no comparison of its own.
+  } else if (query.vs === "custom") {
+    if (!query.vs_from || !query.vs_to) throw Errors.badRequest("A custom comparison needs `vs_from` and `vs_to`");
+    prevRange = { from: query.vs_from, to: query.vs_to };
+    check(prevRange, "compared range");
+    prevLabel = rangeLabel(prevRange);
+  } else if (period.range) {
+    prevRange = comparedRange(period.range, query.vs ?? "previous", period.preset);
+    const months = presetMonths(period.preset);
+    const days = rangeDays(period.range);
+    prevLabel =
+      query.vs === "year"
+        ? `the same dates last year (${rangeLabel(prevRange)})`
+        : months
+          ? months === 1 ? "the month before" : `the previous ${months} months`
+          : days === 1 ? "the day before" : `the previous ${days} days`;
+  }
+  return { today, period, prevRange, prevLabel };
+}
 
 /** `[from, to)` of a calendar month ("YYYY-MM") in `timeZone`. */
 export function monthBounds(month: string, timeZone: string): { from: Date; to: Date } {
@@ -52,7 +118,7 @@ const labelClause = (column: Prisma.Sql, value: string | undefined) =>
 /**
  * Which locations and reviews a Dashboard query covers. Same visibility as the reviews table and CSV
  * (lib/data/reviews.ts buildReviewWhere): admins (`visibleIds` null) see every location, others only their active
- * ones. Filters: client group, location, region, type, and the period (whole calendar months in `timeZone`).
+ * ones. Filters: client group, location, region, type, and the period (days in `timeZone`, see resolveInsightPeriod).
  */
 export function insightScope(visibleIds: string[] | null, query: InsightsQuery, timeZone: string, now = new Date()): InsightScope {
   const ids =
@@ -63,13 +129,14 @@ export function insightScope(visibleIds: string[] | null, query: InsightsQuery, 
       : query.location_id
         ? visibleIds.filter((id) => id === query.location_id)
         : visibleIds;
-  // N months = this month and the N-1 before it; LAST_MONTH = the whole previous month. The comparison period has the
-  // same number of calendar months and ends where this one starts.
-  const span = query.months === LAST_MONTH ? 1 : query.months;
-  const end = query.months === LAST_MONTH ? 0 : 1;
-  const from = span > 0 ? monthStart(now, end - span, timeZone) : null;
-  const to = query.months === LAST_MONTH ? monthStart(now, 0, timeZone) : null;
-  const prev = from ? { from: monthStart(now, end - 2 * span, timeZone), to: from } : null;
+  const { today, period, prevRange, prevLabel } = resolveInsightPeriod(query, timeZone, now);
+  const dayStart = (day: string) => startOfDayInZone(day, timeZone);
+  const from = period.range ? dayStart(period.range.from) : null;
+  // A period that runs to today has no end, so reviews posted today count (with wholeRange: it ends tonight, which counts
+  // the same reviews but makes the figures cover the whole period).
+  const to = period.range && (period.range.to < today || optionsOf(query).wholeRange) ? dayStart(addDays(period.range.to, 1)) : null;
+  const prev = prevRange ? { from: dayStart(prevRange.from), to: dayStart(addDays(prevRange.to, 1)) } : null;
+  const lengthMonths = period.range && to ? (presetMonths(period.preset) ?? rangeDays(period.range) / 30.4375) : null;
 
   const location = Prisma.sql`l.removed_at is null
     ${ids === null ? Prisma.empty : Prisma.sql`and l.id = any(${ids}::uuid[])`}
@@ -78,9 +145,33 @@ export function insightScope(visibleIds: string[] | null, query: InsightsQuery, 
     ${labelClause(Prisma.sql`l.region`, query.region)}
     ${query.island ? Prisma.sql`and l.region = any(${PH_REGIONS.filter((r) => r.island === query.island).map((r) => r.code)}::text[])` : Prisma.empty}
     ${labelClause(Prisma.sql`l.location_type`, query.location_type)}`;
-  const sc = { from, to, prev };
+  const sc = { from, to, prev, period, prevRange, prevLabel, lengthMonths };
   const review = Prisma.sql`${location} ${periodJoin(sc)}`;
   return { any: ids === null || ids.length > 0, location, review, ...sc };
+}
+
+/**
+ * A Dashboard tab's data for the period and, when the query has `vs` (Compare to) and a bounded period, the same data
+ * for the compared dates in `compare`. Both sides count their whole range (ScopeOptions.wholeRange) so they compare
+ * like for like. `bQuery` adjusts the compared side's query from the period's result (e.g. the same chart buckets).
+ */
+export async function withCompare<Q extends InsightsQuery, T>(
+  query: Q,
+  timeZone: string,
+  run: (q: Q) => Promise<T>,
+  bQuery: (q: Q, a: T) => Q = (q) => q,
+): Promise<T & { compare: CompareSide<T> | null }> {
+  if (!query.vs) return { ...(await run(query)), compare: null };
+  const { period, prevRange } = resolveInsightPeriod(query, timeZone);
+  if (!prevRange || !period.range) return { ...(await run(query)), compare: null }; // All time: nothing to compare with
+  const a = await run({ ...query, _scope: { wholeRange: true } });
+  const b = await run(
+    bQuery(
+      { ...query, range: undefined, months: undefined, from: prevRange.from, to: prevRange.to, vs: undefined, vs_from: undefined, vs_to: undefined, _scope: { wholeRange: true, noCompare: true } },
+      a,
+    ),
+  );
+  return { ...a, compare: { label: rangeLabel(prevRange), range: prevRange, same_length: rangeDays(period.range) === rangeDays(prevRange), data: b } };
 }
 
 /** `and r.create_time …` bounds of the period, for joins and filters on reviews (alias `r`). */

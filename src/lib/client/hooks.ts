@@ -7,7 +7,7 @@ import { HEARTBEAT_MS, idleState } from "@/lib/presence";
 import { apiFetch } from "./api-client";
 import { downloadFile, downloadReviewsCsv, type ExportParams } from "./export";
 import type { Profile } from "@/lib/schemas/common";
-import type { AutoExtractInput, AutoExtractStatus } from "@/lib/schemas/auto-extract";
+import type { AutoExtractInput, AutoExtractSchedule, AutoExtractStatus } from "@/lib/schemas/auto-extract";
 import type {
   AdminUser,
   AssignableOptions,
@@ -20,7 +20,7 @@ import type { ForgotPasswordInput, LoginInput, ResetPasswordInput, SignupInput }
 import type { GroupSummary, ListLocationsQuery, LocationsPage, OverviewStats } from "@/lib/schemas/locations";
 import type { Granularity, LocationDetail, ReviewsPage } from "@/lib/schemas/location-detail";
 import type { DashboardData } from "@/lib/schemas/dashboard";
-import type { CompareInsights, CompareQuery, GroupByQuery, InsightsQuery, OverviewInsights, ReputationInsights, ThemeExportQuery, ThemeInsights, ThemeReviews, ThemeReviewsQuery } from "@/lib/schemas/insights";
+import type { CompareInsights, CompareQuery, GroupByQuery, InsightsQuery, OverviewInsights, ReputationInsights, ThemeExportQuery, ThemeInsights, ThemeReviews, ThemeReviewsQuery, WithCompare } from "@/lib/schemas/insights";
 import type { UpdateLocationInput } from "@/lib/schemas/export";
 import type { GoogleRefreshSummary } from "@/lib/schemas/google-refresh";
 import type { AddLocationsInput, AddLocationsResult } from "@/lib/schemas/serper";
@@ -47,6 +47,7 @@ export const queryKeys = {
   extractLocations: ["extract", "locations"] as const,
   extractStatus: ["extract", "status"] as const,
   autoExtract: ["admin", "auto-extract"] as const,
+  autoExtractSchedule: ["auto-extract", "schedule"] as const,
   reviews: (q: Partial<ListReviewsQuery>) => ["reviews", q] as const,
 };
 
@@ -291,7 +292,7 @@ type Params = Record<string, string | number | undefined>;
 export function useDashboard(q: Partial<InsightsQuery>, enabled = true) {
   return useQuery({
     queryKey: queryKeys.dashboard(q),
-    queryFn: () => apiFetch<DashboardData>("/api/stats/dashboard", { query: q as Params }),
+    queryFn: () => apiFetch<WithCompare<DashboardData>>("/api/stats/dashboard", { query: q as Params }),
     ...LIVE_QUERY,
     enabled,
   });
@@ -305,10 +306,10 @@ function useInsights<T>(view: "overview" | "reputation" | "themes" | "compare", 
     enabled,
   });
 }
-export const useOverviewInsights = (q: Partial<InsightsQuery>, enabled = true) => useInsights<OverviewInsights>("overview", q, enabled);
-export const useReputationInsights = (q: Partial<GroupByQuery>, enabled = true) => useInsights<ReputationInsights>("reputation", q, enabled);
+export const useOverviewInsights = (q: Partial<InsightsQuery>, enabled = true) => useInsights<WithCompare<OverviewInsights>>("overview", q, enabled);
+export const useReputationInsights = (q: Partial<GroupByQuery>, enabled = true) => useInsights<WithCompare<ReputationInsights>>("reputation", q, enabled);
 export const useCompareInsights = (q: Partial<CompareQuery>, enabled = true) => useInsights<CompareInsights>("compare", q, enabled);
-export const useThemeInsights = (q: Partial<GroupByQuery>, enabled = true) => useInsights<ThemeInsights>("themes", q, enabled);
+export const useThemeInsights = (q: Partial<GroupByQuery>, enabled = true) => useInsights<WithCompare<ThemeInsights>>("themes", q, enabled);
 
 /** Reviews that mention one theme, by location (Review Intelligence drawer). */
 export function useThemeReviews(q: Partial<ThemeReviewsQuery>, enabled = true) {
@@ -358,6 +359,16 @@ export function useExtractLocations(refetchInterval: number | false = false) {
     queryFn: () => apiFetch<ExtractLocationRow[]>("/api/extract/locations"),
     staleTime: 10_000,
     refetchInterval,
+  });
+}
+
+/** Everyone: whether automatic extraction is on and its time. */
+export function useAutoExtractSchedule(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.autoExtractSchedule,
+    queryFn: () => apiFetch<AutoExtractSchedule>("/api/auto-extract/schedule"),
+    enabled,
+    staleTime: 5 * 60_000,
   });
 }
 
