@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import Alert from "@mui/material/Alert";
 import MuiLink from "@mui/material/Link";
-import { AuthCard, AuthForm } from "@/components/auth-card";
+import { AuthCard, AuthForm, underlineField } from "@/components/auth-card";
 import { PasswordField } from "@/components/ui/password-field";
 import { useResetPassword } from "@/lib/client/hooks";
 import { resetPasswordSchema } from "@/lib/schemas/auth";
@@ -47,8 +47,8 @@ function ResetPasswordForm() {
         pending={reset.isPending || reset.isSuccess}
         link={{ href: "/login", text: "Back to sign in" }}
       >
-        <PasswordField label="New password" autoComplete="new-password" autoFocus helperText={password.length >= 8 ? "Looks good" : "At least 8 characters"} valid={password.length >= 8} value={password} onChange={(e) => setPassword(e.target.value)} required />
-        <PasswordField label="Confirm new password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required />
+        <PasswordField {...underlineField} label="New password" autoComplete="new-password" autoFocus helperText={password.length >= 8 ? "Looks good" : "At least 8 characters"} valid={password.length >= 8} value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <PasswordField {...underlineField} label="Confirm new password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required />
       </AuthForm>
     </AuthCard>
   );

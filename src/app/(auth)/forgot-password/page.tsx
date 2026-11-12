@@ -5,8 +5,7 @@ import Link from "next/link";
 import Alert from "@mui/material/Alert";
 import MuiLink from "@mui/material/Link";
 import TextField from "@mui/material/TextField";
-import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
-import { AuthCard, AuthForm, fieldIcon } from "@/components/auth-card";
+import { AuthCard, AuthForm, underlineField } from "@/components/auth-card";
 import { useForgotPassword } from "@/lib/client/hooks";
 import { forgotPasswordSchema } from "@/lib/schemas/auth";
 
@@ -43,7 +42,7 @@ function ForgotPasswordForm() {
         pending={forgot.isPending}
         link={{ href: "/login", text: "Back to sign in" }}
       >
-        <TextField label="Email" type="email" autoComplete="email" autoFocus slotProps={fieldIcon(<EmailOutlinedIcon fontSize="small" />)} value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <TextField {...underlineField} label="Email" type="email" autoComplete="email" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} required />
       </AuthForm>
     </AuthCard>
   );

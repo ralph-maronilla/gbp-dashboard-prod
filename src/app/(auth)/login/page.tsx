@@ -4,8 +4,7 @@ import { Suspense, useState, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
 import Alert from "@mui/material/Alert";
 import TextField from "@mui/material/TextField";
-import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
-import { AuthCard, AuthForm, fieldIcon } from "@/components/auth-card";
+import { AuthCard, AuthForm, underlineField } from "@/components/auth-card";
 import { PasswordField } from "@/components/ui/password-field";
 import { useLogin } from "@/lib/client/hooks";
 import { loginSchema } from "@/lib/schemas/auth";
@@ -58,8 +57,8 @@ function LoginForm() {
         link={{ prompt: "New here?", href: "/signup", text: "Create an account" }}
         extra={{ href: "/forgot-password", text: "Forgot your password?" }}
       >
-        <TextField label="Email" type="email" autoComplete="email" autoFocus slotProps={fieldIcon(<EmailOutlinedIcon fontSize="small" />)} value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <PasswordField label="Password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <TextField {...underlineField} label="Email" type="email" autoComplete="email" autoFocus value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <PasswordField {...underlineField} label="Password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
       </AuthForm>
     </AuthCard>
   );

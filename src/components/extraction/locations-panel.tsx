@@ -3,10 +3,9 @@
 import { useMemo, useState } from "react";
 import Alert from "@mui/material/Alert";
 import Button from "@mui/material/Button";
-import Chip from "@mui/material/Chip";
+import Box from "@mui/material/Box";
 import IconButton from "@mui/material/IconButton";
 import LinearProgress from "@mui/material/LinearProgress";
-import Paper from "@mui/material/Paper";
 import Stack from "@mui/material/Stack";
 import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
@@ -27,18 +26,21 @@ import { BRANCH_PREFIX_MAX } from "@/lib/schemas/export";
 import { GRID_LOADING_PROPS, LoadingOverlay } from "@/components/ui/loading-overlay";
 import { RetryAlert } from "@/components/ui/retry-alert";
 import { SelectField, groupOptions } from "@/components/ui/select-field";
+import { StatusDot, type StatusTone } from "@/components/ui/status-dot";
 import { AddLocationsDialog } from "./add-locations-dialog";
 import { DeleteLocationDialog } from "./delete-location-dialog";
 import { EditLocationDialog } from "./edit-location-dialog";
 import { GoogleRefreshDialog } from "./google-refresh-dialog";
+import { PLAIN_GRID_PROPS, STRONG_CELL, gridScrollSx, plainGridSx } from "./grid-styles";
 
-const STATE_CHIP: Record<ExtractState, { label: string; color: "default" | "info" | "warning" | "success" | "error" }> = {
-  never: { label: "Not extracted", color: "default" },
-  extracting: { label: "Extracting", color: "info" },
-  backfilling: { label: "Partly extracted", color: "warning" },
-  catching_up: { label: "Catching up", color: "warning" },
-  up_to_date: { label: "Up to date", color: "success" },
-  error: { label: "Error", color: "error" },
+/** Status as a dot and label: teal for "Up to date", the signal colors for the rest. */
+const STATE: Record<ExtractState, { label: string; tone: StatusTone }> = {
+  never: { label: "Not extracted", tone: "neutral" },
+  extracting: { label: "Extracting", tone: "info" },
+  backfilling: { label: "Partly extracted", tone: "warning" },
+  catching_up: { label: "Catching up", tone: "warning" },
+  up_to_date: { label: "Up to date", tone: "ok" },
+  error: { label: "Error", tone: "error" },
 };
 
 const EMPTY_SELECTION: GridRowSelectionModel = { type: "include", ids: new Set() };
@@ -81,7 +83,7 @@ export function LocationsPanel({ role, canExtract, onShowReviews }: Props) {
 
   const columns = useMemo<GridColDef<ExtractLocationRow>[]>(
     () => [
-      { field: "name", headerName: "Location", flex: 1.2, minWidth: 200, editable: isAdmin },
+      { field: "name", headerName: "Location", flex: 1.2, minWidth: 200, editable: isAdmin, cellClassName: STRONG_CELL },
       {
         field: "clients",
         headerName: "Client",
@@ -99,8 +101,8 @@ export function LocationsPanel({ role, canExtract, onShowReviews }: Props) {
         headerName: "Status",
         width: 150,
         renderCell: ({ row }) => {
-          const chip = <Chip size="small" variant="outlined" color={STATE_CHIP[row.state].color} label={STATE_CHIP[row.state].label} />;
-          return row.last_error ? <Tooltip title={row.last_error}>{chip}</Tooltip> : chip;
+          const status = <StatusDot tone={STATE[row.state].tone} label={STATE[row.state].label} />;
+          return row.last_error ? <Tooltip title={row.last_error}>{status}</Tooltip> : status;
         },
       },
       {
@@ -174,78 +176,85 @@ export function LocationsPanel({ role, canExtract, onShowReviews }: Props) {
   const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
 
   return (
-    <Paper variant="outlined" sx={{ p: 3 }}>
-      <Stack direction={{ xs: "column", md: "row" }} spacing={2} sx={{ mb: 2, alignItems: { md: "center" }, justifyContent: "space-between" }}>
-        <Typography variant="h6">Locations</Typography>
-        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-          <TextField size="small" label="Search" value={search} onChange={(e) => setSearch(e.target.value)} sx={{ minWidth: 200 }} />
-          <SelectField label="Client" value={clientId} width={180} options={groupOptions(groups.data, "All clients")} onChange={setClientId} />
-          {isAdmin && (
-            <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setAdding(true)}>
-              Add locations
-            </Button>
+    <section aria-labelledby="locations-heading">
+      <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2.5, alignItems: { sm: "center" }, justifyContent: "space-between" }}>
+        <Typography id="locations-heading" component="h2" sx={{ fontSize: 20, fontWeight: 600, color: "brand.head" }}>
+          Locations{" "}
+          {locations.data && (
+            <Box component="span" sx={{ fontSize: 15, fontWeight: 400, color: "text.secondary", ml: 0.5 }}>
+              {rows.length.toLocaleString()}
+            </Box>
           )}
-          {isAdmin && (
-            <Button
-              variant="outlined"
-              onClick={() =>
-                setRefreshing(
-                  selectedIds.length > 0
-                    ? { ids: selectedIds, label: `the ${selectedIds.length} selected location${selectedIds.length === 1 ? "" : "s"}` }
-                    : clientId || search
-                      ? { ids: rows.map((r) => r.id), label: `these ${rows.length} locations` }
-                      : { ids: undefined, label: `all ${rows.length} locations` },
-                )
-              }
-              disabled={rows.length === 0}
-            >
-              Refresh Google totals{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
-            </Button>
-          )}
-          {isAdmin && (
-            <Tooltip title="Sets empty regions from each location's address or name. Free.">
-              <span>
-                <Button variant="outlined" onClick={() => autofill.mutate()} disabled={autofill.isPending}>
-                  {autofill.isPending ? "Filling…" : "Auto-fill regions"}
-                </Button>
-              </span>
-            </Tooltip>
-          )}
-        </Stack>
-      </Stack>
-
-      {canExtract && (
-        <Stack spacing={1.5} sx={{ mb: 2 }}>
-          <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5} data-tour="extract">
+        </Typography>
+        {canExtract && (
+          <Stack direction="row" spacing={1.5} useFlexGap sx={{ flexWrap: "wrap" }} data-tour="extract">
             {progress.running ? (
               <Button color="warning" variant="contained" startIcon={<StopIcon />} onClick={stop}>
                 Stop
               </Button>
             ) : (
               <>
+                {/* The one orange action on this screen. */}
+                <Button variant="contained" color="accent" disabled={activeVisible.length === 0} onClick={() => start(clientId || search ? activeVisible : undefined)}>
+                  Extract {clientId || search ? `these ${activeVisible.length}` : "all"}
+                </Button>
                 <Button variant="contained" startIcon={<PlayArrowIcon />} disabled={selectedIds.length === 0} onClick={() => start(selectedIds)}>
                   Extract selected ({selectedIds.length})
-                </Button>
-                <Button variant="outlined" disabled={activeVisible.length === 0} onClick={() => start(clientId || search ? activeVisible : undefined)}>
-                  Extract {clientId || search ? `these ${activeVisible.length}` : "all"}
                 </Button>
               </>
             )}
           </Stack>
-          {(progress.running || progress.message || progress.error) && (
-            <Stack spacing={0.75}>
-              {progress.running && <LinearProgress variant={progress.total ? "determinate" : "indeterminate"} value={pct} />}
-              {progress.error ? (
-                <Alert severity="error">{progress.error}</Alert>
-              ) : (
-                <Typography variant="body2" color="text.secondary">
-                  {progress.message}
-                  {progress.slices > 0 &&
-                    ` ${progress.done} of ${progress.total} locations up to date · ${progress.reviewsSaved.toLocaleString()} reviews saved · ${progress.creditsUsed.toLocaleString()} credits` +
-                      (progress.failed ? ` · ${progress.failed} failed` : "")}
-                </Typography>
-              )}
-            </Stack>
+        )}
+      </Stack>
+
+      <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} useFlexGap sx={{ mb: 2, flexWrap: "wrap" }}>
+        <TextField size="small" label="Search" value={search} onChange={(e) => setSearch(e.target.value)} sx={{ minWidth: 200 }} />
+        {isAdmin && (
+          <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setAdding(true)}>
+            Add locations
+          </Button>
+        )}
+        {isAdmin && (
+          <Button
+            variant="outlined"
+            onClick={() =>
+              setRefreshing(
+                selectedIds.length > 0
+                  ? { ids: selectedIds, label: `the ${selectedIds.length} selected location${selectedIds.length === 1 ? "" : "s"}` }
+                  : clientId || search
+                    ? { ids: rows.map((r) => r.id), label: `these ${rows.length} locations` }
+                    : { ids: undefined, label: `all ${rows.length} locations` },
+              )
+            }
+            disabled={rows.length === 0}
+          >
+            Refresh Google totals{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
+          </Button>
+        )}
+        {isAdmin && (
+          <Tooltip title="Sets empty regions from each location's address or name. Free.">
+            <span>
+              <Button variant="outlined" onClick={() => autofill.mutate()} disabled={autofill.isPending} sx={{ width: { xs: "100%", md: "auto" } }}>
+                {autofill.isPending ? "Filling…" : "Auto-fill regions"}
+              </Button>
+            </span>
+          </Tooltip>
+        )}
+        <SelectField label="Client" value={clientId} width={180} options={groupOptions(groups.data, "All clients")} onChange={setClientId} />
+      </Stack>
+
+      {canExtract && (progress.running || progress.message || progress.error) && (
+        <Stack spacing={0.75} sx={{ mb: 2 }}>
+          {progress.running && <LinearProgress variant={progress.total ? "determinate" : "indeterminate"} value={pct} />}
+          {progress.error ? (
+            <Alert severity="error">{progress.error}</Alert>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              {progress.message}
+              {progress.slices > 0 &&
+                ` ${progress.done} of ${progress.total} locations up to date · ${progress.reviewsSaved.toLocaleString()} reviews saved · ${progress.creditsUsed.toLocaleString()} credits` +
+                  (progress.failed ? ` · ${progress.failed} failed` : "")}
+            </Typography>
           )}
         </Stack>
       )}
@@ -271,8 +280,11 @@ export function LocationsPanel({ role, canExtract, onShowReviews }: Props) {
         <RetryAlert what="locations" onRetry={() => void locations.refetch()} />
       ) : (
         <LoadingOverlay active={update.isPending || autofill.isPending}>
+        <Box sx={gridScrollSx}>
         <DataGrid
           autoHeight
+          {...PLAIN_GRID_PROPS}
+          sx={plainGridSx}
           rows={rows}
           columns={columns}
           loading={locations.isPending}
@@ -304,6 +316,7 @@ export function LocationsPanel({ role, canExtract, onShowReviews }: Props) {
           onProcessRowUpdateError={(err: Error) => setEditError(err.message)}
           slotProps={GRID_LOADING_PROPS}
         />
+        </Box>
         </LoadingOverlay>
       )}
       {adding && <AddLocationsDialog onClose={() => setAdding(false)} />}
@@ -316,6 +329,6 @@ export function LocationsPanel({ role, canExtract, onShowReviews }: Props) {
           onDeleted={(id) => setSelection((sel) => ({ ...sel, ids: new Set([...sel.ids].filter((x) => x !== id)) }))}
         />
       )}
-    </Paper>
+    </section>
   );
 }

@@ -2,15 +2,14 @@
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import Chip from "@mui/material/Chip";
+import Box from "@mui/material/Box";
 import { LoadingOverlay } from "@/components/ui/loading-overlay";
 import Skeleton from "@mui/material/Skeleton";
 import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
-import { AutoExtractCard } from "@/components/extraction/auto-extract-card";
-import { AutoExtractInfo } from "@/components/extraction/auto-extract-info";
 import { LocationsPanel } from "@/components/extraction/locations-panel";
 import { ReviewsPanel } from "@/components/extraction/reviews-panel";
+import { SidePanel } from "@/components/extraction/side-panel";
 import { EMPTY_REVIEW_FILTER, parseReviewFilter, reviewFilterQuery, type ReviewFilterState } from "@/components/extraction/review-filter";
 import { useExtractStatus, useMe } from "@/lib/client/hooks";
 import { canExtract } from "@/lib/schemas/common";
@@ -63,40 +62,20 @@ function ExtractionView() {
   if (!role) return <Loading />;
 
   return (
-    <Stack spacing={3}>
-      <Stack direction="row" sx={{ alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 1 }}>
-        <Typography variant="h5" component="h1">
-          Extraction
-        </Typography>
-        {allowed && status.data && (
-          status.data.configured ? (
-            <Stack direction="row" spacing={1}>
-              <Chip
-                size="small"
-                variant="outlined"
-                color={status.data.my_credits_today >= status.data.my_daily_credit_limit ? "error" : status.data.my_credits_today >= status.data.my_daily_credit_limit * 0.8 ? "warning" : "default"}
-                label={`Your credits today: ${status.data.my_credits_today.toLocaleString()} / ${status.data.my_daily_credit_limit.toLocaleString()}`}
-              />
-              <Chip
-                size="small"
-                variant="outlined"
-                color={status.data.credits_today >= status.data.daily_credit_limit ? "error" : "default"}
-                label={`Everyone: ${status.data.credits_today.toLocaleString()} / ${status.data.daily_credit_limit.toLocaleString()}`}
-              />
-            </Stack>
-          ) : (
-            <Chip size="small" color="warning" label="SERPER_API_KEY is not set" />
-          )
-        )}
-      </Stack>
-
-      {role === "admin" ? <AutoExtractCard /> : <AutoExtractInfo canExtract={allowed} />}
-
-      <LocationsPanel role={role} canExtract={allowed} onShowReviews={showReviews} />
-
-      <div id="reviews">
-        <ReviewsPanel filter={filter} onFilterChange={setFilter} />
-      </div>
-    </Stack>
+    <div>
+      <Typography component="h1" sx={{ fontSize: 34, fontWeight: 700, lineHeight: 1.2, color: "brand.head", mb: 4 }}>
+        Extraction
+      </Typography>
+      {/* Main content and the side panel; the panel stacks below on narrow screens. */}
+      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "minmax(0, 1fr) minmax(320px, 360px)" }, gap: 5, alignItems: "start" }}>
+        <Stack spacing={6} sx={{ minWidth: 0 }}>
+          <LocationsPanel role={role} canExtract={allowed} onShowReviews={showReviews} />
+          <div id="reviews">
+            <ReviewsPanel filter={filter} onFilterChange={setFilter} />
+          </div>
+        </Stack>
+        <SidePanel role={role} canExtract={allowed} status={status.data} />
+      </Box>
+    </div>
   );
 }

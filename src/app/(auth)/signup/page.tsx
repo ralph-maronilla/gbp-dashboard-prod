@@ -5,9 +5,7 @@ import Link from "next/link";
 import Alert from "@mui/material/Alert";
 import MuiLink from "@mui/material/Link";
 import TextField from "@mui/material/TextField";
-import EmailOutlinedIcon from "@mui/icons-material/EmailOutlined";
-import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
-import { AuthCard, AuthForm, fieldIcon } from "@/components/auth-card";
+import { AuthCard, AuthForm, underlineField } from "@/components/auth-card";
 import { PasswordField } from "@/components/ui/password-field";
 import { useSignup } from "@/lib/client/hooks";
 import { signupSchema } from "@/lib/schemas/auth";
@@ -56,9 +54,9 @@ export default function SignupPage() {
         pending={signup.isPending || (signup.isSuccess && !signup.data.requires_email_confirmation)}
         link={{ prompt: "Already have an account?", href: "/login", text: "Sign in" }}
       >
-        <TextField label="Full name" autoComplete="name" autoFocus slotProps={fieldIcon(<PersonOutlinedIcon fontSize="small" />)} value={fullName} onChange={(e) => setFullName(e.target.value)} />
-        <TextField label="Email" type="email" autoComplete="email" slotProps={fieldIcon(<EmailOutlinedIcon fontSize="small" />)} value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <PasswordField label="Password" autoComplete="new-password" helperText={password.length >= 8 ? "Looks good" : "At least 8 characters"} valid={password.length >= 8} value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <TextField {...underlineField} label="Full name" autoComplete="name" autoFocus value={fullName} onChange={(e) => setFullName(e.target.value)} />
+        <TextField {...underlineField} label="Email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <PasswordField {...underlineField} label="Password" autoComplete="new-password" helperText={password.length >= 8 ? "Looks good" : "At least 8 characters"} valid={password.length >= 8} value={password} onChange={(e) => setPassword(e.target.value)} required />
       </AuthForm>
     </AuthCard>
   );

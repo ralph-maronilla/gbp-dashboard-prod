@@ -6,7 +6,7 @@ import { create } from "zustand";
 interface TourState {
   running: boolean;
   step: number;
-  /** data-tour id of the element the current step points at (the layout opens the sidebar for sidebar steps). */
+  /** data-tour id of the element the current step points at. */
   target: string | null;
   setTarget: (target: string | null) => void;
   start: () => void;

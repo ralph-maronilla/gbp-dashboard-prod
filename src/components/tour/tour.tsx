@@ -27,7 +27,7 @@ const PAD = 6;
 const WAIT_MS = 4000;
 const doneKey = (userId: string) => `tour-done:${userId}`;
 
-/** The first element marked `data-tour=target` that is actually on screen (the sidebar exists twice: desktop and phone). */
+/** The first element marked `data-tour=target` that is actually on screen. */
 function findTarget(target: string): HTMLElement | null {
   for (const el of document.querySelectorAll<HTMLElement>(`[data-tour="${target}"]`)) {
     const r = el.getBoundingClientRect();
@@ -67,8 +67,8 @@ export function Tour() {
     if (!readStored(doneKey(me.data.id)) && !useTourStore.getState().running) start();
   }, [me.data, desktop, start]);
 
-  // Each step: tell the layout what is highlighted (it opens the sidebar for sidebar steps), open the step's page, then
-  // wait for the element and follow it (scrolling, resizing, the sidebar sliding in) until the step changes.
+  // Each step: record what is highlighted, open the step's page, then
+  // wait for the element and follow it (scrolling, resizing) until the step changes.
   useEffect(() => {
     if (!current) return;
     setTarget(current.target);
@@ -126,7 +126,7 @@ export function Tour() {
 
   if (!current) return null;
   const rect = box?.target === current.target ? box.rect : null;
-  const z = 1400; // above the app bar, drawers and dialogs
+  const z = 1400; // above the app bar and dialogs
   const spot = rect && { top: rect.top - PAD, left: rect.left - PAD, width: rect.width + PAD * 2, height: rect.height + PAD * 2 };
   const anchor = spot && { getBoundingClientRect: () => new DOMRect(spot.left, spot.top, spot.width, spot.height) };
 

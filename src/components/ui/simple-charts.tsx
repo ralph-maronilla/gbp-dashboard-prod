@@ -4,7 +4,7 @@ import { BarChart } from "@mui/x-charts/BarChart";
 import { LineChart } from "@mui/x-charts/LineChart";
 import type { Theme } from "@mui/material/styles";
 import { axisSx, CHART_MARGIN } from "@/lib/chart";
-import { BRAND, chartAccent } from "@/lib/design-tokens";
+import { chartAccent, chartCompare } from "@/lib/design-tokens";
 
 /** A second series drawn against the first (Dashboard Compare to): same positions, its own name and colour. */
 export interface CompareSeries {
@@ -98,8 +98,8 @@ export function RatingLineChart({
   );
 }
 
-/** Colours of the two compared months: teal and amber stay apart in both themes and for colour-blind viewers. */
-export const COMPARE_COLORS = [chartAccent, BRAND.amber] as const;
+/** Colours of the two compared months: teal and the primary blue. */
+export const COMPARE_COLORS = [chartAccent, chartCompare] as const;
 
 /** Grouped horizontal bars: one row per label, one bar per series (the compared months). Null values draw no bar. */
 export function CompareBarChart({

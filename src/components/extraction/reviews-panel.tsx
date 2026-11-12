@@ -10,11 +10,11 @@ import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Link from "@mui/material/Link";
-import Paper from "@mui/material/Paper";
 import Rating from "@mui/material/Rating";
 import Stack from "@mui/material/Stack";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import type { SxProps, Theme } from "@mui/material/styles";
 import DownloadIcon from "@mui/icons-material/Download";
 import ViewColumnOutlinedIcon from "@mui/icons-material/ViewColumnOutlined";
 import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
@@ -32,6 +32,7 @@ import { orderCsvColumns, type ReviewCsvColumn } from "@/lib/export/review-colum
 import { ISLAND_GROUPS, REGION_CODES, regionIsland, regionName } from "@/lib/ph-regions";
 import type { ReviewRow, ReviewSort } from "@/lib/schemas/extract";
 import { CsvExportDialog } from "./csv-export-dialog";
+import { PLAIN_GRID_PROPS, STRONG_CELL, gridScrollSx, plainGridSx } from "./grid-styles";
 import { MoreFilters } from "./more-filters";
 import { EMPTY_REVIEW_FILTER, reviewFilterParams, type ReviewFilterState } from "./review-filter";
 
@@ -84,6 +85,11 @@ function suggestedFileName(location: string | undefined): string {
   return ["reviews", slug, day].filter(Boolean).join("-");
 }
 
+/** Read-only stars, announced as "4 out of 5 stars". */
+function Stars({ value }: { value: number }) {
+  return <Rating value={value} readOnly size="small" getLabelText={(v) => `${v} out of 5 stars`} sx={{ verticalAlign: "middle" }} />;
+}
+
 /** Extracted reviews in the CX Pulse sheet layout, server-paginated, with the same filters as the CSV export. */
 export function ReviewsPanel({ filter, onFilterChange }: Props) {
   const groups = useGroups();
@@ -127,7 +133,7 @@ export function ReviewsPanel({ filter, onFilterChange }: Props) {
       { field: "reference", headerName: "Reference #", width: 140 },
       // Newest first is the first click (and the default), so a click on an already-sorted date always reverses it.
       { field: "datetime", headerName: "Date / time", width: 150, sortingOrder: ["desc", "asc"] },
-      { field: "branch", headerName: "Branch", width: 140 },
+      { field: "branch", headerName: "Branch", width: 140, cellClassName: STRONG_CELL },
       { field: "first_name", headerName: "First name", width: 130 },
       { field: "middle_name", headerName: "Middle name", width: 110, sortable: false },
       { field: "last_name", headerName: "Last name", width: 140, sortable: false, description: "Sort by First name to order by the reviewer's full name" },
@@ -139,7 +145,7 @@ export function ReviewsPanel({ filter, onFilterChange }: Props) {
         field: "rating",
         headerName: "Rating",
         width: 130,
-        renderCell: ({ row }) => <Rating value={row.rating} readOnly size="small" sx={{ verticalAlign: "middle" }} />,
+        renderCell: ({ row }) => <Stars value={row.rating} />,
       },
       {
         field: "reviewer_url",
@@ -225,27 +231,28 @@ export function ReviewsPanel({ filter, onFilterChange }: Props) {
   }, [locations.data]);
 
   return (
-    <Paper variant="outlined" sx={{ p: 3 }}>
-      <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2, justifyContent: "space-between", alignItems: { sm: "center" } }}>
-        <Typography variant="h6">
-          Reviews{reviews.data ? ` (${reviews.data.total.toLocaleString()})` : ""}
+    <section aria-labelledby="reviews-heading">
+      <Stack direction="row" spacing={2} sx={{ mb: 2.5, justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", rowGap: 1.5 }}>
+        <Typography id="reviews-heading" component="h2" sx={{ fontSize: 20, fontWeight: 600, color: "brand.head" }}>
+          Reviews{" "}
+          {reviews.data && (
+            <Box component="span" sx={{ fontSize: 15, fontWeight: 400, color: "text.secondary", ml: 0.5 }}>
+              {reviews.data.total.toLocaleString()}
+            </Box>
+          )}
         </Typography>
-        <Stack direction="row" spacing={1} data-tour="reviews-export">
-          <Button variant="outlined" startIcon={<ViewColumnOutlinedIcon />} onClick={(e) => setColumnsMenu(e.currentTarget)} aria-haspopup="menu">
-            Columns
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<DownloadIcon />}
-            disabled={exporter.isPending || invalidRange || reviews.data?.total === 0}
-            onClick={() => {
-              exporter.reset();
-              setExporting(suggestedFileName(selectedLocation?.name));
-            }}
-          >
-            {exporter.isPending ? "Preparing…" : "Export CSV"}
-          </Button>
-        </Stack>
+        <Button
+          variant="outlined"
+          startIcon={<DownloadIcon />}
+          data-tour="reviews-export"
+          disabled={exporter.isPending || invalidRange || reviews.data?.total === 0}
+          onClick={() => {
+            exporter.reset();
+            setExporting(suggestedFileName(selectedLocation?.name));
+          }}
+        >
+          {exporter.isPending ? "Preparing…" : "Export CSV"}
+        </Button>
       </Stack>
       <Menu anchorEl={columnsMenu} open={!!columnsMenu} onClose={() => setColumnsMenu(null)}>
         {columns.map((c) => (
@@ -272,6 +279,9 @@ export function ReviewsPanel({ filter, onFilterChange }: Props) {
         <DateRange from={filter.from} to={filter.to} onChange={set} />
         <SelectField label="Rating" value={filter.rating} width={150} options={RATING_OPTIONS} onChange={(rating) => set({ rating })} />
         <MoreFilters filter={filter} onChange={set} regions={regionOptions.regions} islands={regionOptions.islands} />
+        <Button variant="outlined" startIcon={<ViewColumnOutlinedIcon />} onClick={(e) => setColumnsMenu(e.currentTarget)} aria-haspopup="menu" sx={{ alignSelf: { xs: "flex-start", md: "auto" } }}>
+          Columns
+        </Button>
         {(search || (Object.keys(EMPTY_REVIEW_FILTER) as (keyof ReviewFilterState)[]).some((k) => filter[k] !== EMPTY_REVIEW_FILTER[k])) && (
           <Button
             onClick={() => {
@@ -291,8 +301,10 @@ export function ReviewsPanel({ filter, onFilterChange }: Props) {
         // A sort, page or filter change keeps the old rows on screen while the new ones load: dim them and show a spinner
         // that stays in view (the grid's own one sits in the middle of the table, off screen on a long page).
         <LoadingOverlay active={reviews.isPlaceholderData}>
+        <Box sx={gridScrollSx}>
         <DataGrid
           autoHeight
+          {...PLAIN_GRID_PROPS}
           rows={reviews.data?.rows ?? []}
           columns={columns}
           columnVisibilityModel={visibility}
@@ -313,10 +325,11 @@ export function ReviewsPanel({ filter, onFilterChange }: Props) {
           disableColumnMenu
           disableRowSelectionOnClick
           onRowClick={({ row }) => setOpen(row)}
-          sx={{ "& .MuiDataGrid-row": { cursor: "pointer" } }}
+          sx={[plainGridSx, { "& .MuiDataGrid-row": { cursor: "pointer" } }] as SxProps<Theme>}
           slotProps={GRID_LOADING_PROPS}
           localeText={{ noRowsLabel: "No reviews match. Extract locations above or change the filters." }}
         />
+        </Box>
         </LoadingOverlay>
       )}
 
@@ -337,7 +350,7 @@ export function ReviewsPanel({ filter, onFilterChange }: Props) {
       {open && (
         <AppDialog title={`${open.first_name} ${open.last_name !== "N/A" ? open.last_name : ""}`} onClose={() => setOpen(null)} closeLabel="Close">
           <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-            <Rating value={open.rating} readOnly size="small" />
+            <Stars value={open.rating} />
             <Typography variant="body2" color="text.secondary">
               {open.datetime} · {open.branch}
             </Typography>
@@ -354,6 +367,6 @@ export function ReviewsPanel({ filter, onFilterChange }: Props) {
           <Typography variant="caption" color="text.secondary">Reference # {open.reference}</Typography>
         </AppDialog>
       )}
-    </Paper>
+    </section>
   );
 }

@@ -82,8 +82,8 @@ test.describe("admin: add locations and extract", () => {
   test("the daily credit limits are shown and count what was spent", async ({ page }) => {
     await loginViaApi(page, USERS.admin.email);
     await openExtraction(page);
-    await expect(page.getByText(/Your credits today: \d+ \/ 200/)).toBeVisible();
-    await expect(page.getByText(/Everyone: \d+ \/ 5,000/)).toBeVisible();
+    await expect(page.getByRole("meter", { name: "Yours" })).toHaveAttribute("aria-valuetext", /^\d+ of 200 credits$/);
+    await expect(page.getByRole("meter", { name: "Everyone" })).toHaveAttribute("aria-valuetext", /^\d+ of 5,000 credits$/);
   });
 });
 
@@ -99,7 +99,7 @@ test.describe("a person an admin allowed to extract", () => {
     await extractSelected(page, "Delta Clinic");
     await expect(row(page, "Delta Clinic")).toContainText(/Up to date\s*3/, { timeout: 30_000 });
     expect((await stub.calls()).every((c) => c.body.cid === LOCATIONS.delta.cid)).toBe(true);
-    await expect(page.getByText(/Your credits today: [1-9]\d* \/ 200/)).toBeVisible();
+    await expect(page.getByRole("meter", { name: "Yours" })).toHaveAttribute("aria-valuetext", /^[1-9]\d* of 200 credits$/);
   });
 
   test("cannot extract someone else's location through the API either", async ({ page }) => {

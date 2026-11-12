@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
-import { IBM_Plex_Sans } from "next/font/google";
+import { Poppins } from "next/font/google";
 import { AppRouterCacheProvider } from "@mui/material-nextjs/v16-appRouter";
 import { Providers } from "@/components/providers";
 
-const plex = IBM_Plex_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-sans" });
+const poppins = Poppins({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
   title: "Review Dashboard",
@@ -16,7 +16,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   // Render per request: the CSP nonce (proxy.ts) can only be added to the scripts of a page rendered for that request.
   await connection();
   return (
-    <html lang="en" className={plex.variable}>
+    <html lang="en" className={poppins.variable}>
       <body suppressHydrationWarning>
         <AppRouterCacheProvider>
           <Providers>{children}</Providers>

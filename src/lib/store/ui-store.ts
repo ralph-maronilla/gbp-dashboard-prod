@@ -45,7 +45,6 @@ export const DEFAULT_OVERVIEW_FILTER: OverviewFilter = {
 /** UI state only. Server data lives in React Query. */
 interface UiState {
   themeMode: "light" | "dark";
-  sidebarOpen: boolean;
   usersFilter: { status: Status | "all"; q: string };
   /** Overview grid filters. Mirrored to the URL query string; not persisted. */
   overviewFilter: OverviewFilter;
@@ -57,15 +56,13 @@ interface UiState {
   detailReady: boolean;
   setDetailFilter: (f: Partial<DetailFilter>) => void;
   toggleTheme: () => void;
-  setSidebarOpen: (open: boolean) => void;
   setUsersFilter: (f: Partial<UiState["usersFilter"]>) => void;
 }
 
 export const useUiStore = create<UiState>()(
   persist(
     (set) => ({
-      themeMode: "dark",
-      sidebarOpen: true,
+      themeMode: "light",
       usersFilter: { status: "all", q: "" },
       overviewFilter: DEFAULT_OVERVIEW_FILTER,
       overviewReady: false,
@@ -74,13 +71,12 @@ export const useUiStore = create<UiState>()(
       detailReady: false,
       setDetailFilter: (f) => set((s) => ({ detailFilter: { ...s.detailFilter, ...f } })),
       toggleTheme: () => set((s) => ({ themeMode: s.themeMode === "light" ? "dark" : "light" })),
-      setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
       setUsersFilter: (f) => set((s) => ({ usersFilter: { ...s.usersFilter, ...f } })),
     }),
     {
       name: "ui-preferences",
       skipHydration: true, // rehydrated after mount to avoid SSR/client mismatch
-      partialize: (s) => ({ themeMode: s.themeMode, sidebarOpen: s.sidebarOpen }),
+      partialize: (s) => ({ themeMode: s.themeMode }),
     },
   ),
 );

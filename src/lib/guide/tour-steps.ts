@@ -15,7 +15,7 @@ export interface TourStep {
 }
 
 export const TOUR_STEPS: TourStep[] = [
-  { target: "nav", title: "Your pages", text: "The sidebar opens each page: Overview for the quick view of your locations, Dashboard for the analysis, and Extraction for the reviews themselves." },
+  { target: "nav", title: "Your pages", text: "The top bar opens each page: Overview for the quick view of your locations, Dashboard for the analysis, and Extraction for the reviews themselves." },
   { target: "dash-filters", page: "/dashboard", title: "Dashboard filters", text: "Narrow by client, region, island group, type or location. Every tab follows these filters, and the page link keeps them." },
   { target: "dash-tabs", page: "/dashboard", title: "Dashboard tabs", text: "Review Overview, Reputation, Sentiment and Review Intelligence look at your reviews from different angles. In Review Intelligence, click a theme to read its reviews." },
   { target: "dash-period", page: "/dashboard", title: "Period and Compare to", text: "Click Period to pick the dates (presets, the calendar, or typed From / To; it starts on All time). Tick Compare to at the bottom to compare with the previous period, the same period last year or custom dates; every tab then shows ▲ / ▼ changes, and Review Overview adds a side-by-side comparison." },

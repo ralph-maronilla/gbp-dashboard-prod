@@ -1,31 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
-import AppBar from "@mui/material/AppBar";
-import Avatar from "@mui/material/Avatar";
+import type { ReactNode } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
-import Container from "@mui/material/Container";
 import IconButton from "@mui/material/IconButton";
-import Stack from "@mui/material/Stack";
-import Toolbar from "@mui/material/Toolbar";
 import Typography from "@mui/material/Typography";
-import useMediaQuery from "@mui/material/useMediaQuery";
-import { useTheme } from "@mui/material/styles";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
 import LightModeIcon from "@mui/icons-material/LightMode";
-import MenuIcon from "@mui/icons-material/Menu";
 import { BrandMark } from "@/components/brand-mark";
-import { Sidebar } from "@/components/sidebar";
+import { TopNav } from "@/components/top-nav";
 import { Tour } from "@/components/tour/tour";
-import { useTourStore } from "@/lib/store/tour-store";
 import { useHeartbeat, useIdleLogout, useLogout, useMe } from "@/lib/client/hooks";
 import { useUiStore } from "@/lib/store/ui-store";
+
+/** Page width: content and the top bar share one centered column. */
+const PAGE = { maxWidth: 1360, mx: "auto", px: { xs: 2, sm: 4 } } as const;
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const me = useMe();
@@ -34,60 +28,37 @@ export default function AppLayout({ children }: { children: ReactNode }) {
   const logout = useLogout();
   const mode = useUiStore((s) => s.themeMode);
   const toggleTheme = useUiStore((s) => s.toggleTheme);
-  const sidebarOpen = useUiStore((s) => s.sidebarOpen);
-  const setSidebarOpen = useUiStore((s) => s.setSidebarOpen);
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const isDesktop = useMediaQuery(useTheme().breakpoints.up("md"));
-  // The tour opens the sidebar while one of its steps points at it.
-  const tourTarget = useTourStore((s) => s.target);
-  const tourSidebar = tourTarget === "nav" || tourTarget === "nav-users" || tourTarget === "guide";
 
   return (
     <Box sx={{ minHeight: "100dvh" }}>
-      <AppBar
-        position="fixed"
-        color="default"
-        elevation={0}
-        sx={{ borderBottom: 1, borderColor: "divider", zIndex: (t) => t.zIndex.drawer + 1 }}
-      >
-        <Toolbar variant="dense" sx={{ gap: 1, minHeight: 56 }}>
-          <IconButton
-            aria-label="Toggle navigation"
-            edge="start"
-            color="inherit"
-            // Same button: collapse/expand on desktop (remembered), slide-out on mobile.
-            onClick={() => (isDesktop ? setSidebarOpen(!sidebarOpen) : setMobileOpen((o) => !o))}
-          >
-            <MenuIcon />
-          </IconButton>
-          <Typography variant="h6" component={Link} href="/" sx={{ color: "inherit", textDecoration: "none", fontSize: "0.9375rem", letterSpacing: "-0.005em", display: "flex", alignItems: "center", gap: 1 }}>
+      <Box component="header" sx={{ position: "sticky", top: 0, zIndex: "appBar", bgcolor: "background.default", borderBottom: 1, borderColor: "divider" }}>
+        {/* Brand, pages, account. Below the `lg` width the pages wrap onto their own row under the brand. */}
+        <Box sx={{ ...PAGE, display: "flex", alignItems: "center", flexWrap: "wrap", columnGap: { xs: 1, md: 4 }, minHeight: 64 }}>
+          <Box component={Link} href="/" sx={{ display: "flex", alignItems: "center", gap: { xs: 1, sm: 1.5 }, minHeight: 64, textDecoration: "none", color: "brand.head", fontWeight: 600, fontSize: { xs: "1rem", sm: "1.0625rem" }, whiteSpace: "nowrap" }}>
             <BrandMark />
             Review Dashboard
-          </Typography>
-          <Box sx={{ flexGrow: 1 }} />
-          {me.data && (
-            <Stack direction="row" spacing={1.25} sx={{ alignItems: "center", display: { xs: "none", sm: "flex" } }}>
-              <Box sx={{ textAlign: "right" }}>
-                <Typography variant="body2" sx={{ fontWeight: 500, lineHeight: 1.2 }}>
-                  {me.data.email}
+          </Box>
+          <TopNav role={me.data?.role} />
+          <Box sx={{ display: "flex", alignItems: "center", gap: { xs: 0.5, sm: 1.5 }, ml: "auto", minWidth: 0 }}>
+            {me.data && (
+              <Box sx={{ textAlign: "right", minWidth: 0, display: { xs: "none", sm: "block" } }}>
+                <Typography variant="body2" noWrap sx={{ fontWeight: 600, lineHeight: 1.3 }}>
+                  {me.data.full_name || me.data.email}
                 </Typography>
-                <Typography variant="caption" color="text.secondary">
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", lineHeight: 1.3 }}>
                   {me.data.role}
                 </Typography>
               </Box>
-              <Avatar sx={{ width: 32, height: 32, bgcolor: "primary.main", color: "primary.contrastText", fontSize: "0.8rem", fontWeight: 600 }}>
-                {me.data.email[0]?.toUpperCase()}
-              </Avatar>
-            </Stack>
-          )}
-          <IconButton onClick={toggleTheme} aria-label="Toggle light/dark theme" color="inherit">
-            {mode === "light" ? <DarkModeIcon /> : <LightModeIcon />}
-          </IconButton>
-          <Button color="inherit" onClick={() => logout.mutate()} disabled={logout.isPending}>
-            Sign out
-          </Button>
-        </Toolbar>
-      </AppBar>
+            )}
+            <IconButton onClick={toggleTheme} aria-label="Toggle light/dark theme" color="inherit" sx={{ width: 44, height: 44 }}>
+              {mode === "light" ? <DarkModeIcon /> : <LightModeIcon />}
+            </IconButton>
+            <Button variant="outlined" color="inherit" onClick={() => logout.mutate()} disabled={logout.isPending} sx={{ whiteSpace: "nowrap", px: { xs: 1.5, sm: 2.25 } }}>
+              Sign out
+            </Button>
+          </Box>
+        </Box>
+      </Box>
 
       {/* Closing the dialog any way other than "Sign out now" counts as activity. */}
       <Dialog open={idle.warning} onClose={idle.stay} maxWidth="xs" fullWidth>
@@ -103,20 +74,8 @@ export default function AppLayout({ children }: { children: ReactNode }) {
         </DialogActions>
       </Dialog>
 
-      <Box sx={{ display: "flex" }}>
-        <Sidebar
-          role={me.data?.role}
-          desktopOpen={sidebarOpen || tourSidebar}
-          mobileOpen={mobileOpen || (!isDesktop && tourSidebar)}
-          trapFocus={!tourSidebar}
-          onMobileClose={() => setMobileOpen(false)}
-        />
-        <Box component="main" sx={{ flexGrow: 1, minWidth: 0 }}>
-          <Toolbar />
-          <Container maxWidth="xl" sx={{ py: { xs: 3, md: 4 } }}>
-            {children}
-          </Container>
-        </Box>
+      <Box component="main" sx={{ ...PAGE, py: { xs: 3, md: 5 } }}>
+        {children}
       </Box>
       <Tour />
     </Box>

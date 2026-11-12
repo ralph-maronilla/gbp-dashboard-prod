@@ -1,40 +1,93 @@
 import { alpha, createTheme } from "@mui/material/styles";
-import { PALETTE, radius } from "./design-tokens";
+import { CONTROL_HEIGHT, PALETTE, radius } from "./design-tokens";
 
-const FONT_STACK = 'var(--font-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+const FONT_STACK = "var(--font-sans), system-ui, sans-serif";
 
-/** Single theme definition; light/dark selected by mode. Navy/sky surfaces and brand, orange accent
- * marks, amber for ratings; status colors are reserved for signals. Values live in PALETTE. */
+/** The Pathways colors that have no MUI palette slot. Read as `theme.palette.brand.head` or `"brand.head"` in `sx`. */
+interface BrandColors {
+  /** Headings and the brand name. */
+  head: string;
+  /** Teal-tint side panel background. */
+  panel: string;
+  /** Meter track and dividers inside the panel. */
+  track: string;
+  /** Borders and row dividers (same as `palette.divider`). */
+  line: string;
+  /** Links and outlined / text buttons: the blue that is readable as text in this mode. */
+  primaryText: string;
+  /** Status dots and the active nav underline. */
+  teal: string;
+  /** Status text. */
+  tealText: string;
+  star: string;
+  starOff: string;
+  inputBg: string;
+}
+
+declare module "@mui/material/styles" {
+  interface Palette {
+    brand: BrandColors;
+    /** Orange fill: one action per screen, the stars and the credit meter. Its text is always `contrastText` (dark). */
+    accent: Palette["primary"];
+  }
+  interface PaletteOptions {
+    brand?: BrandColors;
+    accent?: PaletteOptions["primary"];
+  }
+}
+
+declare module "@mui/material/Button" {
+  interface ButtonPropsColorOverrides {
+    accent: true;
+  }
+}
+
+/** Single theme definition; light/dark selected by mode. Values live in PALETTE (design-tokens.ts). */
 export function buildTheme(mode: "light" | "dark") {
   const c = PALETTE[mode];
-  const s = c.surface;
-  const tint = c.primary.light; // selected nav item / segment / tab background
+  const tint = alpha(c.primary, mode === "light" ? 0.08 : 0.24); // selected segment / list item background
+  const subtle = alpha(c.line, mode === "light" ? 0.45 : 0.4); // table header and row hover
+  const focusRing = { outline: `2px solid ${c.primaryText}`, outlineOffset: 2 };
 
   const base = createTheme({
     palette: {
       mode,
-      primary: c.primary,
-      secondary: c.amber,
+      primary: { main: c.primary, dark: c.primaryDark, light: tint, contrastText: c.onPrimary },
+      // Secondary is teal as text (tags in the User guide).
+      secondary: { main: c.tealText, contrastText: c.bg },
+      accent: { main: c.accent, dark: c.accentDark, light: c.accent, contrastText: c.onAccent },
       info: c.info,
       success: c.success,
       warning: c.warning,
       error: c.error,
-      background: { default: s.bg, paper: s.paper },
-      divider: s.border,
-      text: c.text,
-      action: { hover: alpha(c.primary.main, 0.06), selected: tint },
+      background: { default: c.bg, paper: c.bg },
+      divider: c.line,
+      text: { primary: c.text, secondary: c.muted, disabled: alpha(c.text, 0.45) },
+      action: { hover: alpha(c.primary, mode === "light" ? 0.05 : 0.14), selected: tint },
+      brand: {
+        head: c.head,
+        panel: c.panel,
+        track: c.track,
+        line: c.line,
+        primaryText: c.primaryText,
+        teal: c.teal,
+        tealText: c.tealText,
+        star: c.star,
+        starOff: c.starOff,
+        inputBg: c.inputBg,
+      },
     },
-    shape: { borderRadius: radius.md },
+    shape: { borderRadius: 8 },
     typography: {
       fontFamily: FONT_STACK,
-      h4: { fontWeight: 600, fontSize: "1.75rem", letterSpacing: "-0.015em" },
-      h5: { fontWeight: 600, fontSize: "1.375rem", letterSpacing: "-0.01em" },
-      h6: { fontWeight: 600, fontSize: "1rem" },
+      h4: { fontWeight: 700, fontSize: "1.75rem", letterSpacing: "-0.015em", color: c.head },
+      h5: { fontWeight: 600, fontSize: "1.375rem", letterSpacing: "-0.01em", color: c.head },
+      h6: { fontWeight: 600, fontSize: "1rem", color: c.head },
       subtitle2: { fontWeight: 600, fontSize: "0.875rem" },
       body1: { fontSize: "0.9375rem" },
       body2: { fontSize: "0.875rem" },
       caption: { fontSize: "0.78125rem", fontWeight: 400 },
-      button: { fontWeight: 500 },
+      button: { fontWeight: 600 },
     },
   });
 
@@ -42,9 +95,13 @@ export function buildTheme(mode: "light" | "dark") {
     components: {
       MuiCssBaseline: {
         styleOverrides: {
-          body: { scrollbarColor: `${s.border} transparent`, fontVariantNumeric: "tabular-nums" },
+          body: { scrollbarColor: `${c.line} transparent`, fontVariantNumeric: "tabular-nums" },
         },
       },
+      MuiButtonBase: {
+        styleOverrides: { root: { "&.Mui-focusVisible": focusRing } },
+      },
+      // No gradients and no card shadows: surfaces are flat, separated by hairlines.
       MuiPaper: {
         styleOverrides: {
           root: { backgroundImage: "none" },
@@ -52,46 +109,68 @@ export function buildTheme(mode: "light" | "dark") {
         variants: [
           {
             props: { variant: "outlined" },
-            style: { borderColor: s.border, borderRadius: radius.lg },
+            style: { borderColor: c.line, borderRadius: radius.control },
           },
         ],
       },
       MuiAppBar: {
         styleOverrides: {
-          root: { backgroundColor: s.paper, color: base.palette.text.primary },
+          root: { backgroundColor: c.bg, color: c.text },
         },
       },
-      MuiDrawer: {
-        styleOverrides: {
-          paper: { backgroundColor: s.sidebar, borderRight: `1px solid ${s.border}`, backgroundImage: "none" },
-        },
+      // Floating surfaces share the page color, so a hairline marks their edge in both modes.
+      MuiPopover: {
+        styleOverrides: { paper: { border: `1px solid ${c.line}`, borderRadius: radius.control } },
+      },
+      MuiDialog: {
+        styleOverrides: { paper: { border: `1px solid ${c.line}`, borderRadius: radius.panel } },
       },
       MuiButton: {
         defaultProps: { disableElevation: true },
         styleOverrides: {
-          root: { textTransform: "none", borderRadius: radius.md, fontWeight: 500 },
-          sizeMedium: { padding: "7px 16px" },
-          sizeLarge: { padding: "10px 20px", fontSize: "0.95rem" },
-          outlined: { borderColor: s.border, color: base.palette.text.primary },
+          root: { textTransform: "none", borderRadius: radius.control, fontWeight: 600, minHeight: CONTROL_HEIGHT },
+          sizeSmall: { padding: "6px 14px" },
+          sizeMedium: { padding: "8px 18px" },
+          sizeLarge: { padding: "12px 22px", fontSize: "0.95rem" },
+        },
+        variants: [
+          // The fill blue is too dark to read as text on the dark page, so text and outlined buttons use primaryText.
+          { props: { variant: "text", color: "primary" }, style: { color: c.primaryText } },
+          {
+            props: { variant: "outlined", color: "primary" },
+            style: { color: c.primaryText, borderColor: c.line, "&:hover": { borderColor: c.primaryText } },
+          },
+          { props: { variant: "outlined", color: "inherit" }, style: { borderColor: c.line } },
+        ],
+      },
+      MuiLink: {
+        styleOverrides: {
+          root: { color: c.primaryText, textDecorationColor: alpha(c.primaryText, 0.4), borderRadius: 2, "&:focus-visible": focusRing },
         },
       },
       MuiOutlinedInput: {
         styleOverrides: {
           root: {
-            borderRadius: radius.md,
-            "& .MuiOutlinedInput-notchedOutline": { borderColor: s.border },
-            "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: base.palette.text.disabled },
-            "&.Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: c.primary.main, borderWidth: 1.5 },
+            borderRadius: radius.control,
+            minHeight: CONTROL_HEIGHT,
+            backgroundColor: c.inputBg,
+            "& .MuiOutlinedInput-notchedOutline": { borderColor: c.line },
+            "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: c.muted },
+            "&.Mui-focused .MuiOutlinedInput-notchedOutline": { borderColor: c.primaryText, borderWidth: 2 },
           },
         },
       },
       MuiInputLabel: {
-        styleOverrides: { root: { "&.Mui-focused": { color: c.primary.main } } },
+        styleOverrides: {
+          root: { "&.Mui-focused": { color: c.primaryText } },
+          // The default small label is centered on a 40px box; inputs are 44px.
+          outlined: { "&.MuiInputLabel-sizeSmall:not(.MuiInputLabel-shrink)": { transform: "translate(14px, 11px) scale(1)" } },
+        },
       },
       MuiChip: {
         styleOverrides: {
           root: { fontWeight: 500, borderRadius: radius.sm },
-          outlined: { borderColor: s.border },
+          outlined: { borderColor: c.line },
         },
         variants: (["success", "warning", "error", "info"] as const).flatMap((color) => [
           {
@@ -111,10 +190,11 @@ export function buildTheme(mode: "light" | "dark") {
           },
         ]),
       },
+      // Tabs follow the top bar: muted labels, the selected one in head color over a teal underline.
       MuiTabs: {
         styleOverrides: {
-          root: { minHeight: 40, borderBottom: `1px solid ${s.border}` },
-          indicator: { height: 2, backgroundColor: c.accent },
+          root: { minHeight: CONTROL_HEIGHT, borderBottom: `1px solid ${c.line}` },
+          indicator: { height: 3, backgroundColor: c.teal },
         },
       },
       MuiTab: {
@@ -123,19 +203,19 @@ export function buildTheme(mode: "light" | "dark") {
             textTransform: "none",
             fontWeight: 500,
             fontSize: "0.875rem",
-            minHeight: 40,
+            minHeight: CONTROL_HEIGHT,
             minWidth: 0,
             padding: "8px 2px",
             marginRight: 24,
-            color: base.palette.text.secondary,
-            "&.Mui-selected": { color: c.primary.main },
+            color: c.muted,
+            "&.Mui-selected": { color: c.head, fontWeight: 600 },
           },
         },
       },
-      // Segmented control: one bordered track, the selected segment gets a neutral fill.
+      // Segmented control: one bordered track, the selected segment gets a tinted fill.
       MuiToggleButtonGroup: {
         styleOverrides: {
-          root: { gap: 2, padding: 2, border: `1px solid ${s.border}`, borderRadius: radius.md, backgroundColor: s.paper },
+          root: { gap: 2, padding: 3, border: `1px solid ${c.line}`, borderRadius: radius.control, backgroundColor: c.inputBg },
         },
       },
       MuiToggleButton: {
@@ -143,13 +223,15 @@ export function buildTheme(mode: "light" | "dark") {
           root: {
             textTransform: "none",
             fontWeight: 500,
-            borderRadius: `${radius.sm}px !important`,
+            borderRadius: `${radius.control - 3}px !important`,
             border: 0,
-            padding: "4px 10px",
-            color: base.palette.text.secondary,
+            padding: "6px 12px",
+            minHeight: CONTROL_HEIGHT - 8,
+            color: c.muted,
             "&.Mui-selected": {
               backgroundColor: tint,
-              color: c.primary.main,
+              color: c.primaryText,
+              fontWeight: 600,
             },
             "&.Mui-selected:hover": {
               backgroundColor: tint,
@@ -160,20 +242,20 @@ export function buildTheme(mode: "light" | "dark") {
       MuiListItemButton: {
         styleOverrides: {
           root: {
-            borderRadius: radius.md,
+            borderRadius: radius.sm,
             paddingTop: 6,
             paddingBottom: 6,
-            color: base.palette.text.secondary,
-            "&:hover": { color: base.palette.text.primary },
+            color: c.muted,
+            "&:hover": { color: c.text },
             "&.Mui-selected": {
               backgroundColor: tint,
-              color: c.primary.main,
+              color: c.primaryText,
               fontWeight: 600,
             },
             "&.Mui-selected:hover": {
               backgroundColor: tint,
             },
-            "&.Mui-selected .MuiListItemIcon-root": { color: c.primary.main },
+            "&.Mui-selected .MuiListItemIcon-root": { color: c.primaryText },
           },
         },
       },
@@ -182,63 +264,62 @@ export function buildTheme(mode: "light" | "dark") {
       },
       MuiTableCell: {
         styleOverrides: {
-          root: { borderColor: s.border },
+          root: { borderColor: c.line },
           head: {
             fontSize: "0.75rem",
             fontWeight: 600,
-            color: base.palette.text.secondary,
-            backgroundColor: s.raised,
+            color: c.muted,
+            backgroundColor: subtle,
             whiteSpace: "nowrap",
           },
-          stickyHeader: { backgroundColor: s.raised },
+          stickyHeader: { backgroundColor: c.inputBg },
         },
       },
       MuiTableRow: {
-        styleOverrides: { root: { "&.MuiTableRow-hover:hover": { backgroundColor: s.raised } } },
+        styleOverrides: { root: { "&.MuiTableRow-hover:hover": { backgroundColor: subtle } } },
       },
       MuiTooltip: {
         styleOverrides: {
           tooltip: {
-            backgroundColor: c.text.primary,
-            color: s.paper,
+            backgroundColor: c.text,
+            color: c.bg,
             borderRadius: radius.sm,
           },
-          arrow: { color: c.text.primary },
+          arrow: { color: c.text },
         },
       },
       MuiRating: {
-        styleOverrides: { iconFilled: { color: c.amber.main }, iconEmpty: { color: s.border } },
+        styleOverrides: { iconFilled: { color: c.star }, iconEmpty: { color: c.starOff } },
       },
       MuiAvatar: {
-        styleOverrides: { colorDefault: { backgroundColor: tint, color: c.primary.main } },
+        styleOverrides: { colorDefault: { backgroundColor: tint, color: c.primaryText } },
       },
       MuiAlert: {
-        styleOverrides: { root: { borderRadius: radius.md } },
+        styleOverrides: { root: { borderRadius: radius.control } },
       },
       MuiSkeleton: {
-        styleOverrides: { rounded: { borderRadius: radius.lg } },
+        styleOverrides: { rounded: { borderRadius: radius.control } },
       },
       MuiDataGrid: {
         styleOverrides: {
           root: {
-            border: `1px solid ${s.border}`,
-            borderRadius: radius.lg,
-            backgroundColor: s.paper,
-            "--DataGrid-rowBorderColor": s.border,
-            "--DataGrid-containerBackground": s.raised,
-            "& .MuiDataGrid-columnHeaders": {
-              backgroundColor: s.raised,
-            },
+            border: `1px solid ${c.line}`,
+            borderRadius: radius.control,
+            backgroundColor: c.bg,
+            "--DataGrid-rowBorderColor": c.line,
+            "--DataGrid-t-header-background-base": c.bg,
             "& .MuiDataGrid-columnHeaderTitle": {
               fontWeight: 600,
               fontSize: "0.75rem",
-              color: base.palette.text.secondary,
+              color: c.muted,
             },
             "& .MuiDataGrid-cell:focus-within, & .MuiDataGrid-columnHeader:focus-within": {
               outline: "none",
             },
-            "& .MuiDataGrid-row:hover": { backgroundColor: s.raised },
-            "& .MuiDataGrid-footerContainer": { borderTop: `1px solid ${s.border}` },
+            // Controls inside rows stay compact; the 44px minimum is for standalone controls.
+            "& .MuiDataGrid-cell .MuiButton-root": { minHeight: 0 },
+            "& .MuiDataGrid-row:hover": { backgroundColor: subtle },
+            "& .MuiDataGrid-footerContainer": { borderTop: `1px solid ${c.line}` },
           },
         },
       },

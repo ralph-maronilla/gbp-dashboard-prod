@@ -68,7 +68,7 @@ test.describe("automatic extraction (the timer's call to /api/cron/sync)", () =>
     // The Extraction page tells an admin the scheduler is connected and what the last run did.
     await page.goto("/extraction");
     await expect(page.getByText("Scheduler connected")).toBeVisible();
-    await expect(page.getByText(/Last automatic run:/)).toBeVisible();
+    await expect(page.getByText("Last automatic run")).toBeVisible();
     await expect(page.getByText(/reviews saved/).first()).toBeVisible();
   });
 
