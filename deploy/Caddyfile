@@ -9,6 +9,9 @@ APP_DOMAIN_PLACEHOLDER {
 		header_up X-Forwarded-For {remote_host}
 		# Send responses as they are produced (CSV and Excel downloads).
 		flush_interval -1
+		# While the app restarts for a release, hold requests and keep trying instead of answering with an error.
+		lb_try_duration 30s
+		lb_try_interval 250ms
 	}
 
 	# Nothing in this app takes a large upload; the biggest request is a pasted list of Maps links.

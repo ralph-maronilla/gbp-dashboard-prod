@@ -213,6 +213,8 @@ Everyone has to sign in again once (sessions do not carry over).
 | I want to… | Do this |
 |---|---|
 | **Deploy a change** | commit it, then `SSH_KEY=… deploy/deploy.sh ubuntu@<ip>` (laptop) |
+| **Deploy from scratch** (a build looks wrong) | `CLEAN=1 SSH_KEY=… deploy/deploy.sh ubuntu@<ip>` reinstalls the packages and discards the build cache. Normal deploys reuse both, which is what keeps them quick. |
+| **Update the server's own files** (anything in `deploy/` changed: Caddyfile, `bin/`, `systemd/`) | copy `deploy/` to the server and run `provision.sh` again (section 3); it is safe to repeat. |
 | **Roll back** | `sudo /srv/gbp/bin/rollback.sh` (server) goes to the previous release; `sudo /srv/gbp/bin/rollback.sh <release-id>` to a specific one (`ls -1t /srv/gbp/releases`). Database changes are **not** undone, so keep migrations backward compatible. |
 | **See the app's log** | `sudo journalctl -u gbp-dashboard -f` |
 | **See web traffic / certificate issues** | `sudo journalctl -u caddy -n 100` |

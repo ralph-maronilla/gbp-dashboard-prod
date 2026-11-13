@@ -13,6 +13,8 @@ const nextConfig: NextConfig = {
   // Browser tests run their own server from a separate build folder so they never clash with a dev server you have open.
   distDir: process.env.NEXT_DIST_DIR || ".next",
   poweredByHeader: false,
+  // deploy.sh sets this only after `npm run check` has type-checked the project, so the build does not do it twice.
+  typescript: { ignoreBuildErrors: process.env.SKIP_BUILD_TYPECHECK === "1" },
   async redirects() {
     // Overview moved to the home page.
     return [{ source: "/overview", destination: "/", permanent: true }];

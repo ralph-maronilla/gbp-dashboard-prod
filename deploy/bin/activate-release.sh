@@ -19,10 +19,16 @@ chown -R gbp:gbp "$REL"
 # The migration tool is installed once in $ROOT/tools; link it in rather than shipping it with every release.
 ln -sfn "$ROOT/tools/node_modules" "$REL/migrate/node_modules"
 
-echo "== Applying database migrations"
-if ! sudo -u gbp -H bash -c "set -a; . /etc/gbp-dashboard/env; set +a; cd '$REL/migrate' && export DIRECT_URL=\"\${DIRECT_URL:-\$DATABASE_URL}\" && ./node_modules/.bin/prisma migrate deploy"; then
-  echo "Migration failed: nothing was switched. The running release is untouched." >&2
-  exit 1
+# Same migration files as the running release: nothing to apply, so skip starting the migration tool.
+if [ -n "$PREV" ] && [ "$PREV" != "$REL" ] && [ -d "$PREV/migrate/prisma/migrations" ] \
+  && diff -rq "$PREV/migrate/prisma/migrations" "$REL/migrate/prisma/migrations" > /dev/null 2>&1; then
+  echo "== No new database migrations"
+else
+  echo "== Applying database migrations"
+  if ! sudo -u gbp -H bash -c "set -a; . /etc/gbp-dashboard/env; set +a; cd '$REL/migrate' && export DIRECT_URL=\"\${DIRECT_URL:-\$DATABASE_URL}\" && ./node_modules/.bin/prisma migrate deploy"; then
+    echo "Migration failed: nothing was switched. The running release is untouched." >&2
+    exit 1
+  fi
 fi
 
 echo "== Switching to $ID"

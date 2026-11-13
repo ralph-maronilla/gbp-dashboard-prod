@@ -58,9 +58,9 @@ export const GUIDE_SECTIONS: GuideSection[] = [
       {
         kind: "list",
         items: [
-          "The **sidebar** on the left opens each page: Overview, Dashboard, Extraction (and Users for admins). The ☰ button at the top hides or shows it; on a phone it slides out.",
+          "The **top bar** opens each page: Overview, Dashboard, Extraction (and Users for admins). The page you are on is underlined. On a phone the links move to a second row under the logo.",
           "The **sun / moon** button at the top switches between light and dark mode.",
-          "**User guide** at the bottom of the sidebar opens this page. **Start the tour** at the top of this page walks you through the main screens again.",
+          "**User guide** in the top bar opens this page. **Start the tour** at the top of this page walks you through the main screens again.",
           "Filters on the Dashboard and Extraction pages are kept in the page address, so you can bookmark a view or send the link to a colleague.",
         ],
       },
