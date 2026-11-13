@@ -4,6 +4,7 @@ import { ApiError } from "@/server/api/errors";
 import { failure, ok } from "@/server/api/response";
 import { autoCreditsLeft, tickAndClaim } from "@/server/data/auto-extract";
 import { env } from "@/server/env";
+import { syncSheetIfDirty } from "@/server/sheets/sync";
 import { CHAIN_HEADER, scheduleContinuation } from "@/server/sync/continue";
 import { NotConfiguredError, runSync } from "@/server/sync/engine";
 
@@ -25,6 +26,7 @@ function authorized(req: NextRequest): boolean {
  * on the server, see deploy/) calls it every 15 minutes; a call does nothing until an admin has switched automatic extraction on and
  * the chosen Manila time has come, then claims the day's run (once a day) and extracts. A large extraction re-invokes
  * this route (CHAIN_HEADER, lib/sync/continue.ts) until done, within the automatic credit limit of the day.
+ * The same tick keeps the Google Sheet mirror of the reviews up to date (server/sheets).
  */
 export async function GET(req: NextRequest) {
   if (!authorized(req)) return failure(new ApiError(401, "UNAUTHENTICATED", "Authentication required"));
@@ -32,7 +34,12 @@ export async function GET(req: NextRequest) {
   try {
     if (chain === 0) {
       const claim = await tickAndClaim();
-      if (claim !== "claimed") return ok({ skipped: claim });
+      if (claim !== "claimed") {
+        // A tick with no extraction to start: the moment to bring the Google Sheet mirror up to date (if it is set up
+        // and something changed). When an extraction starts instead, the sheet follows at a later tick, once it is done.
+        const sheet = await syncSheetIfDirty();
+        return ok(sheet ? { skipped: claim, sheet } : { skipped: claim });
+      }
     }
     const left = await autoCreditsLeft();
     if (left === null) return ok({ skipped: "disabled" });

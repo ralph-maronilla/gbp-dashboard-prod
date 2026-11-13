@@ -8,6 +8,7 @@ import { apiFetch } from "./api-client";
 import { downloadFile, downloadReviewsCsv, type ExportParams } from "./export";
 import type { Profile } from "@/lib/schemas/common";
 import type { AutoExtractInput, AutoExtractSchedule, AutoExtractStatus } from "@/lib/schemas/auto-extract";
+import type { SheetSyncStatus } from "@/lib/schemas/sheet-sync";
 import type {
   AdminUser,
   AssignableOptions,
@@ -48,6 +49,7 @@ export const queryKeys = {
   extractStatus: ["extract", "status"] as const,
   autoExtract: ["admin", "auto-extract"] as const,
   autoExtractSchedule: ["auto-extract", "schedule"] as const,
+  sheetSync: ["admin", "sheet-sync"] as const,
   reviews: (q: Partial<ListReviewsQuery>) => ["reviews", q] as const,
 };
 
@@ -389,6 +391,29 @@ export function useSaveAutoExtract() {
   return useMutation({
     mutationFn: (input: AutoExtractInput) => apiFetch<AutoExtractStatus>("/api/admin/auto-extract", { method: "PUT", body: input }),
     onSuccess: (data) => qc.setQueryData(queryKeys.autoExtract, data),
+  });
+}
+
+/** Admin: the Google Sheet mirror of the reviews (configured, last synced, pending, last error). */
+export function useSheetSync(enabled: boolean) {
+  return useQuery({
+    queryKey: queryKeys.sheetSync,
+    queryFn: () => apiFetch<SheetSyncStatus>("/api/admin/sheet-sync"),
+    enabled,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
+/** Admin: write the Google Sheet now. */
+export function useSyncSheetNow() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch<SheetSyncStatus>("/api/admin/sheet-sync", { method: "POST", body: {} }),
+    onSuccess: (data) => qc.setQueryData(queryKeys.sheetSync, data),
+    // A failure is recorded on the server too: show its message in the block.
+    onError: () => void qc.invalidateQueries({ queryKey: queryKeys.sheetSync }),
   });
 }
 

@@ -9,7 +9,8 @@ import type { Role } from "@/lib/schemas/common";
 import type { ExtractStatusDto } from "@/lib/schemas/extract";
 import { AutoExtractCard } from "./auto-extract-card";
 import { AutoExtractInfo } from "./auto-extract-info";
-import { PanelDivider, PanelLabel } from "./panel-parts";
+import { PanelLabel } from "./panel-parts";
+import { SheetSyncBlock } from "./sheet-sync-block";
 
 /** One credit row: who, used / limit, and a meter. The figures turn to the warning or error color near or over the limit. */
 function CreditMeter({ label, used, limit, warnAt }: { label: string; used: number; limit: number; warnAt?: number }) {
@@ -46,19 +47,13 @@ function CreditMeter({ label, used, limit, warnAt }: { label: string; used: numb
   );
 }
 
-/** "Credits today": the caller's own spend and everyone's, or the warning that the Serper key is missing. */
+/** "Credits today": the admin's own spend against their daily limit, or the warning that the Serper key is missing. */
 function Credits({ status }: { status: ExtractStatusDto }) {
   return (
     <Stack spacing={2}>
       <PanelLabel>Credits today</PanelLabel>
       {status.configured ? (
-        <>
-          <CreditMeter label="Yours" used={status.my_credits_today} limit={status.my_daily_credit_limit} warnAt={0.8} />
-          <CreditMeter label="Everyone" used={status.credits_today} limit={status.daily_credit_limit} />
-          <Typography variant="caption" color="text.secondary">
-            Automatic runs count toward everyone&apos;s daily credit limit, not toward any person&apos;s own limit.
-          </Typography>
-        </>
+        <CreditMeter label="Yours" used={status.my_credits_today} limit={status.my_daily_credit_limit} warnAt={0.8} />
       ) : (
         <Alert severity="warning">SERPER_API_KEY is not set</Alert>
       )}
@@ -68,10 +63,9 @@ function Credits({ status }: { status: ExtractStatusDto }) {
 
 /**
  * The Extraction page's side panel: automatic extraction (the settings for admins, the read-only schedule for everyone
- * else) and, for people allowed to extract, today's credits.
+ * else). Admins also see their credits today (nobody else sees credit figures) and the Google Sheet mirror.
  */
 export function SidePanel({ role, canExtract, status }: { role: Role; canExtract: boolean; status: ExtractStatusDto | undefined }) {
-  const credits = canExtract && status ? <Credits status={status} /> : null;
   return (
     <Box
       component="aside"
@@ -79,17 +73,12 @@ export function SidePanel({ role, canExtract, status }: { role: Role; canExtract
       sx={{ bgcolor: "brand.panel", borderRadius: `${radius.panel}px`, p: { xs: 2.5, sm: 3.5 }, display: "flex", flexDirection: "column", gap: 3 }}
     >
       {role === "admin" ? (
-        <AutoExtractCard credits={credits} />
-      ) : (
         <>
-          <AutoExtractInfo canExtract={canExtract} />
-          {credits && (
-            <>
-              <PanelDivider />
-              {credits}
-            </>
-          )}
+          <AutoExtractCard credits={status ? <Credits status={status} /> : null} />
+          <SheetSyncBlock />
         </>
+      ) : (
+        <AutoExtractInfo canExtract={canExtract} />
       )}
     </Box>
   );

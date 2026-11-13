@@ -4,7 +4,9 @@ import { Errors } from "@/server/api/errors";
 import { getPrisma } from "@/server/db/prisma";
 import { nameKey, uniqueLocationName } from "@/server/data/locations-admin";
 import { isShortMapsLink, looksLikePlaceId, parseMapsInput } from "@/server/serper/maps-input";
+import { markSheetDirty } from "@/server/sheets/dirty";
 import { SERPER_PREFIX } from "@/server/sync/engine";
+import { canExtract } from "@/lib/schemas/common";
 import { addLocationsSchema, type AddLocationsResult } from "@/lib/schemas/serper";
 import { Prisma } from "@/generated/prisma/client";
 
@@ -27,13 +29,31 @@ const isUniqueViolation = (err: unknown) => err instanceof Prisma.PrismaClientKn
  *  - the same Maps place (same CID, whatever link form it came in) is recognised and skipped;
  *  - a different place with a name that is already taken is added under a distinct name (city, then CID tail);
  *  - both rules are also enforced by the database, so two admins adding at the same moment can't create a duplicate.
+ *
+ * For admins, and for users an admin allowed to extract. Those users cannot widen their own access:
+ *  - the client must be one assigned to them as a whole (not a new name, not one they see a single location of);
+ *  - only the places they add are filed under it; places already in the list are left where they are;
+ *  - without a client, the new locations are assigned to them directly, so they see what they added.
  */
 export const POST = withAuth(
-  { roles: ["admin"], body: addLocationsSchema, rateLimit: { key: "admin", limit: 30, windowSec: 60 } },
+  { roles: ["admin", "manager", "viewer"], body: addLocationsSchema, rateLimit: { key: "admin", limit: 30, windowSec: 60 } },
   async ({ ctx, body }) => {
-    const prisma = getPrisma(); // locations inserts have no RLS policy (service role only); route is admin-checked
+    if (!canExtract(ctx.profile)) throw Errors.forbidden();
+    const isAdmin = ctx.profile.role === "admin";
+    const prisma = getPrisma(); // locations inserts have no RLS policy (service role only); the route checks who may add
     if (body.group_id && !(await prisma.location_groups.findUnique({ where: { id: body.group_id }, select: { id: true } }))) {
       throw Errors.badRequest("Unknown client");
+    }
+    let groupId = body.group_id ?? null;
+    if (!isAdmin && (groupId || body.client_name)) {
+      const mine = await prisma.user_locations.findMany({
+        where: { user_id: ctx.profile.id, group_id: { not: null } },
+        select: { group: { select: { id: true, name: true } } },
+      });
+      const wantedName = body.client_name?.toLowerCase();
+      const match = mine.map((m) => m.group).find((g) => g && (groupId ? g.id === groupId : g.name.toLowerCase() === wantedName));
+      if (!match) throw Errors.badRequest("Choose a client that is assigned to you, or leave the client empty.");
+      groupId = match.id;
     }
 
     // 1. Resolve every input to a CID; the same place pasted twice (even as link + CID) collapses to one entry.
@@ -64,7 +84,7 @@ export const POST = withAuth(
     let alreadyAdded = 0;
     const renamed: AddLocationsResult["renamed"] = [];
     const created: string[] = [];
-    let groupId = body.group_id ?? null;
+    const createdIds: string[] = [];
     try {
       for (const [cid, item] of wanted) {
         const gbpId = `${SERPER_PREFIX}${cid}`;
@@ -76,9 +96,11 @@ export const POST = withAuth(
         for (let attempt = 0; attempt < 5; attempt++) {
           const { name, renamed: didRename } = uniqueLocationName(wantedName, item.address ?? null, cid, takenNames);
           try {
-            await prisma.locations.create({
+            const row = await prisma.locations.create({
               data: { gbp_location_id: gbpId, gbp_account_id: "serper", name, address: item.address || null },
+              select: { id: true },
             });
+            createdIds.push(row.id);
             added++;
             created.push(gbpId);
             if (didRename) renamed.push({ from: wantedName, to: name });
@@ -95,21 +117,25 @@ export const POST = withAuth(
         }
       }
 
-      // 4. File under the client (existing places too, so re-pasting a link moves it to the chosen client).
-      if (!groupId && body.client_name) {
+      // 4. File under the client. Admins: existing places too, so re-pasting a link moves it to the chosen client.
+      //    Everyone else: only what they just added, or they could pull any location into a client they can see.
+      if (isAdmin && !groupId && body.client_name) {
         groupId = (await prisma.location_groups.upsert({ where: { name: body.client_name }, create: { name: body.client_name, created_by: ctx.profile.id }, update: {}, select: { id: true } })).id;
       }
       if (groupId) {
-        const all = await prisma.locations.findMany({ where: { gbp_location_id: { in: gbpIds } }, select: { id: true } });
-        await prisma.location_group_members.createMany({ data: all.map((l) => ({ group_id: groupId as string, location_id: l.id })), skipDuplicates: true });
+        const ids = isAdmin ? (await prisma.locations.findMany({ where: { gbp_location_id: { in: gbpIds } }, select: { id: true } })).map((l) => l.id) : createdIds;
+        await prisma.location_group_members.createMany({ data: ids.map((id) => ({ group_id: groupId as string, location_id: id })), skipDuplicates: true });
+      } else if (!isAdmin && createdIds.length) {
+        // No client: assign the new locations to the person who added them, so they appear in their list.
+        await prisma.user_locations.createMany({ data: createdIds.map((id) => ({ user_id: ctx.profile.id, location_id: id })), skipDuplicates: true });
       }
     } finally {
-      await ctx.db((tx) =>
-        tx.audit_log.create({
-          data: { actor_id: ctx.profile.id, action: "location.added", target: groupId, details: { added, already_added: alreadyAdded, invalid: invalid.length, renamed: renamed.length, created } },
-        }),
-      );
+      const data = { actor_id: ctx.profile.id, action: "location.added", target: groupId, details: { added, already_added: alreadyAdded, invalid: invalid.length, renamed: renamed.length, created } };
+      // The audit_log table is admin-only under RLS, so a non-admin's entry is written over the privileged connection.
+      if (isAdmin) await ctx.db((tx) => tx.audit_log.create({ data }));
+      else await prisma.audit_log.create({ data });
     }
+    if (added > 0 || groupId) await markSheetDirty(); // new locations get a tab in the Google Sheet; a client change shows in its rows
     const response: AddLocationsResult = { added, already_added: alreadyAdded, invalid, renamed };
     return ok(response, 201);
   },

@@ -30,7 +30,7 @@ const TIMES: Option[] = Array.from({ length: 96 }, (_, i) => {
   return { value, label: timeLabel(value) };
 });
 
-const STATUS: Record<string, string> = { completed: "Completed", partial: "Partly done", failed: "Failed", running: "Running" };
+const STATUS: Record<string, string> = { success: "Completed", completed: "Completed", partial: "Partly done", failed: "Failed", running: "Running" };
 
 function when(iso: string, timeZone: string) {
   return new Date(iso).toLocaleString("en-PH", { timeZone, weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });

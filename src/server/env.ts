@@ -66,6 +66,17 @@ export const env = {
       return "Asia/Manila";
     }
   },
+  /**
+   * Google Sheet that mirrors the reviews (src/server/sheets), or null when it is not set up. Needs the spreadsheet's id
+   * (from its address) and a Google service account that the sheet is shared with as Editor: its email and private
+   * key (from the JSON key file; `\n` escapes are accepted). Server-only.
+   */
+  get sheets() {
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID || undefined;
+    const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || undefined;
+    const privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, "\n") || undefined;
+    return spreadsheetId && clientEmail && privateKey ? { spreadsheetId, clientEmail, privateKey } : null;
+  },
   /** Serper (google.serper.dev) key: the source of all review data. */
   get serperApiKey() {
     return process.env.SERPER_API_KEY || undefined;

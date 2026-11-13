@@ -83,7 +83,7 @@ test.describe("admin: add locations and extract", () => {
     await loginViaApi(page, USERS.admin.email);
     await openExtraction(page);
     await expect(page.getByRole("meter", { name: "Yours" })).toHaveAttribute("aria-valuetext", /^\d+ of 200 credits$/);
-    await expect(page.getByRole("meter", { name: "Everyone" })).toHaveAttribute("aria-valuetext", /^\d+ of 5,000 credits$/);
+    await expect(page.getByRole("meter", { name: "Everyone" })).toHaveCount(0); // only the admin's own credits are shown
   });
 });
 
@@ -99,7 +99,7 @@ test.describe("a person an admin allowed to extract", () => {
     await extractSelected(page, "Delta Clinic");
     await expect(row(page, "Delta Clinic")).toContainText(/Up to date\s*3/, { timeout: 30_000 });
     expect((await stub.calls()).every((c) => c.body.cid === LOCATIONS.delta.cid)).toBe(true);
-    await expect(page.getByRole("meter", { name: "Yours" })).toHaveAttribute("aria-valuetext", /^[1-9]\d* of 200 credits$/);
+    await expect(page.getByRole("meter")).toHaveCount(0); // credit figures are for admins only
   });
 
   test("cannot extract someone else's location through the API either", async ({ page }) => {
@@ -108,6 +108,22 @@ test.describe("a person an admin allowed to extract", () => {
     const res = await page.request.post("/api/extract", { headers: { Origin: E2E.appUrl }, data: { location_ids: [LOCATIONS.alpha.id] } });
     expect(res.status()).toBe(404);
     expect(await stub.calls(), "nothing was bought from the source").toHaveLength(0);
+  });
+
+  test("cannot refresh Google totals for someone else's location, or edit or delete locations", async ({ page }) => {
+    await stub.reset();
+    await loginViaApi(page, USERS.extractor.email);
+    const h = { Origin: E2E.appUrl };
+    expect((await page.request.post("/api/admin/locations/google-refresh", { headers: h, data: { location_ids: [LOCATIONS.alpha.id] } })).status()).toBe(404);
+    expect(await stub.calls(), "nothing was bought from the source").toHaveLength(0);
+    expect((await page.request.patch(`/api/admin/locations/${LOCATIONS.delta.id}`, { headers: h, data: { name: "Renamed" } })).status()).toBe(403);
+    expect((await page.request.delete(`/api/admin/locations/${LOCATIONS.delta.id}`, { headers: h, data: {} })).status()).toBe(403);
+  });
+
+  test("cannot file a location under a client that is not assigned to them", async ({ page }) => {
+    await loginViaApi(page, USERS.extractor.email);
+    const res = await page.request.post("/api/admin/locations", { headers: { Origin: E2E.appUrl }, data: { client_name: "A client they do not have", items: [{ input: "1000000000000000078" }] } });
+    expect(res.status()).toBe(400);
   });
 });
 
@@ -123,11 +139,12 @@ test.describe("a person who is not allowed to extract", () => {
     expect(await stub.calls()).toHaveLength(0);
   });
 
-  test("cannot add, edit or delete locations", async ({ page }) => {
-    await loginViaApi(page, USERS.extractor.email);
+  test("cannot add locations or refresh Google totals", async ({ page }) => {
+    await stub.reset();
+    await loginViaApi(page, USERS.viewer.email);
     const h = { Origin: E2E.appUrl };
-    expect((await page.request.post("/api/admin/locations", { headers: h, data: { items: ["1000000000000000077"] } })).status()).toBe(403);
-    expect((await page.request.patch(`/api/admin/locations/${LOCATIONS.delta.id}`, { headers: h, data: { name: "Renamed" } })).status()).toBe(403);
-    expect((await page.request.delete(`/api/admin/locations/${LOCATIONS.delta.id}`, { headers: h, data: {} })).status()).toBe(403);
+    expect((await page.request.post("/api/admin/locations", { headers: h, data: { items: [{ input: "1000000000000000077" }] } })).status()).toBe(403);
+    expect((await page.request.post("/api/admin/locations/google-refresh", { headers: h, data: {} })).status()).toBe(403);
+    expect(await stub.calls()).toHaveLength(0);
   });
 });

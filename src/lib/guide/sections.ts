@@ -48,7 +48,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
           ["See Overview, Dashboard and location pages", "Yes", "Yes", "Yes"],
           ["Browse and export reviews (CSV, Excel)", "Yes", "Yes", "Yes"],
           ["Run extractions (uses Serper credits)", "If an admin allows", "If an admin allows", "Yes"],
-          ["Add, edit or remove locations; refresh Google totals", "No", "No", "Yes"],
+          ["Add locations; refresh Google totals", "If an admin allows", "If an admin allows", "Yes"],
+          ["Edit or remove locations", "No", "No", "Yes"],
           ["Turn automatic extraction on or off, set its time", "No", "No", "Yes"],
           ["Approve users, set roles and access", "No", "No", "Yes"],
         ],
@@ -187,7 +188,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         items: [
           "In **Locations**, tick locations and click **Extract selected**, or **Extract all** (or the filtered ones). Progress shows under the buttons; **Stop** ends it.",
           "Only new and changed reviews are saved, including owner replies and edits. A location's **Status** shows if it is up to date or had a problem (hover the chip for the reason).",
-          "Extraction uses **Serper credits**: each user has **200 a day** and everyone together **5,000 a day** (counted per UTC day). The chips at the top of the page show what is left.",
+          "Extraction uses **Serper credits**: each user has **200 a day** (counted per UTC day). Admins see their credits for today in the side panel.",
         ],
       },
       { kind: "h", text: "Managing locations", roles: ADMIN },
@@ -209,6 +210,16 @@ export const GUIDE_SECTIONS: GuideSection[] = [
           "The card shows the next run, the last run and whether the scheduler is connected. Big extractions continue in follow-up runs until done or the credit limit is reached.",
         ],
       },
+      { kind: "h", text: "Google Sheet copy", roles: ADMIN },
+      {
+        kind: "list",
+        roles: ADMIN,
+        items: [
+          "When it is set up on the server, every review is also kept in a Google Sheet: an **All reviews** tab and **one tab per location**, with the same columns as the CSV export.",
+          "After an extraction or a change to a location, the side panel shows **Update pending** and the sheet is rewritten within 15 minutes. **Sync now** rewrites it at once; **Open sheet** opens it.",
+          "The app rewrites its own tabs completely each time, so keep notes, formulas and charts in tabs you add yourself.",
+        ],
+      },
     ],
   },
   {
@@ -223,7 +234,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
         items: [
           "New sign-ups appear as **pending**: **Approve** or **Reject** them.",
           "Set each user's **Role** (viewer, manager, admin).",
-          "**Manual extraction** allows a viewer or manager to run extractions (it uses Serper credits). It is off for new users; admins can always extract.",
+          "**Manual extraction** allows a viewer or manager to run extractions, add locations and refresh Google totals for their own locations (extracting and refreshing use Serper credits). It is off for new users; admins can always do these.",
           "**Access** chooses which locations a viewer or manager sees: whole **clients** or **individual locations**. Admins always see everything.",
           "**Credits** shows each user's Serper credits today and in the last 30 days; **Activity** shows who is online and on which page.",
         ],

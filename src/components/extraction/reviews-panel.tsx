@@ -1,10 +1,6 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Checkbox from "@mui/material/Checkbox";
-import ListItemText from "@mui/material/ListItemText";
-import Menu from "@mui/material/Menu";
-import MenuItem from "@mui/material/MenuItem";
 import Alert from "@mui/material/Alert";
 import Autocomplete from "@mui/material/Autocomplete";
 import Box from "@mui/material/Box";
@@ -16,11 +12,12 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import type { SxProps, Theme } from "@mui/material/styles";
 import DownloadIcon from "@mui/icons-material/Download";
-import ViewColumnOutlinedIcon from "@mui/icons-material/ViewColumnOutlined";
 import OpenInNewOutlinedIcon from "@mui/icons-material/OpenInNewOutlined";
 import { DataGrid, type GridColDef, type GridColumnVisibilityModel, type GridPaginationModel, type GridSortModel } from "@mui/x-data-grid";
 import { AppDialog } from "@/components/ui/app-dialog";
+import { ColumnsMenu } from "@/components/ui/columns-menu";
 import { DateRange } from "@/components/ui/date-range";
+import { Highlight } from "@/components/ui/highlight";
 import { GRID_LOADING_PROPS, LoadingOverlay } from "@/components/ui/loading-overlay";
 import { RetryAlert } from "@/components/ui/retry-alert";
 import { RATING_OPTIONS, SelectField, groupOptions } from "@/components/ui/select-field";
@@ -97,7 +94,6 @@ export function ReviewsPanel({ filter, onFilterChange }: Props) {
   const exporter = useExportReviews();
   const [exporting, setExporting] = useState<string | null>(null); // the suggested file name while the dialog is open
   const [hiddenStored, setHidden] = useStoredString(HIDDEN_KEY);
-  const [columnsMenu, setColumnsMenu] = useState<HTMLElement | null>(null);
   const [search, setSearch] = useState("");
   const [paging, setPaging] = useState<GridPaginationModel>({ page: 0, pageSize: 25 });
   const [sort, setSort] = useState<GridSortModel>([{ field: "datetime", sort: "desc" }]);
@@ -128,15 +124,30 @@ export function ReviewsPanel({ filter, onFilterChange }: Props) {
         },
   );
 
+  // What the search matched, to mark in the table: the term in the fields "Search in" covers.
+  const marks = {
+    comment: filter.searchIn === "all" || filter.searchIn === "comment" ? q : "",
+    reply: filter.searchIn === "all" || filter.searchIn === "reply" ? q : "",
+    name: filter.searchIn === "all" || filter.searchIn === "name" ? q : "",
+  };
+  const { comment: markComment, reply: markReply, name: markName } = marks;
+
   const columns = useMemo<GridColDef<ReviewRow>[]>(
     () => [
       { field: "reference", headerName: "Reference #", width: 140 },
       // Newest first is the first click (and the default), so a click on an already-sorted date always reverses it.
       { field: "datetime", headerName: "Date / time", width: 150, sortingOrder: ["desc", "asc"] },
       { field: "branch", headerName: "Branch", width: 140, cellClassName: STRONG_CELL },
-      { field: "first_name", headerName: "First name", width: 130 },
-      { field: "middle_name", headerName: "Middle name", width: 110, sortable: false },
-      { field: "last_name", headerName: "Last name", width: 140, sortable: false, description: "Sort by First name to order by the reviewer's full name" },
+      { field: "first_name", headerName: "First name", width: 130, renderCell: ({ row }) => <Highlight text={row.first_name} term={markName} /> },
+      { field: "middle_name", headerName: "Middle name", width: 110, sortable: false, renderCell: ({ row }) => <Highlight text={row.middle_name} term={markName} /> },
+      {
+        field: "last_name",
+        headerName: "Last name",
+        width: 140,
+        sortable: false,
+        description: "Sort by First name to order by the reviewer's full name",
+        renderCell: ({ row }) => <Highlight text={row.last_name} term={markName} />,
+      },
       { field: "location", headerName: "Location", flex: 1, minWidth: 180 },
       { field: "location_type", headerName: "Type", width: 150, valueFormatter: (v: string | null) => v ?? "" },
       { field: "client", headerName: "Client", width: 160, sortable: false },
@@ -168,7 +179,7 @@ export function ReviewsPanel({ filter, onFilterChange }: Props) {
         minWidth: 260,
         renderCell: ({ row }) => (
           <Box sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={row.comment ?? ""}>
-            {row.comment ?? <Typography component="span" variant="body2" color="text.disabled">(rating only)</Typography>}
+            {row.comment ? <Highlight text={row.comment} term={markComment} /> : <Typography component="span" variant="body2" color="text.disabled">(rating only)</Typography>}
           </Box>
         ),
       },
@@ -181,7 +192,7 @@ export function ReviewsPanel({ filter, onFilterChange }: Props) {
         sortable: false,
         renderCell: ({ row }) => (
           <Box sx={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={row.reply ?? ""}>
-            {row.reply ?? <Typography component="span" variant="body2" color="text.disabled">(no reply)</Typography>}
+            {row.reply ? <Highlight text={row.reply} term={markReply} /> : <Typography component="span" variant="body2" color="text.disabled">(no reply)</Typography>}
           </Box>
         ),
       },
@@ -194,7 +205,7 @@ export function ReviewsPanel({ filter, onFilterChange }: Props) {
         valueFormatter: (v: string | null) => v ?? "",
       },
     ],
-    [],
+    [markComment, markReply, markName],
   );
 
   const hidden = new Set((hiddenStored ?? DEFAULT_HIDDEN).split(",").filter(Boolean));
@@ -254,14 +265,6 @@ export function ReviewsPanel({ filter, onFilterChange }: Props) {
           {exporter.isPending ? "Preparing…" : "Export CSV"}
         </Button>
       </Stack>
-      <Menu anchorEl={columnsMenu} open={!!columnsMenu} onClose={() => setColumnsMenu(null)}>
-        {columns.map((c) => (
-          <MenuItem key={c.field} dense onClick={() => toggleColumn(c.field)}>
-            <Checkbox size="small" checked={!hidden.has(c.field)} sx={{ p: 0, mr: 1 }} tabIndex={-1} />
-            <ListItemText primary={c.headerName} />
-          </MenuItem>
-        ))}
-      </Menu>
 
       <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} useFlexGap sx={{ mb: 2, flexWrap: "wrap" }} data-tour="reviews-filters">
         <TextField size="small" label={SEARCH_LABEL[filter.searchIn]} value={search} onChange={(e) => setSearch(e.target.value)} sx={{ minWidth: 220 }} />
@@ -279,9 +282,7 @@ export function ReviewsPanel({ filter, onFilterChange }: Props) {
         <DateRange from={filter.from} to={filter.to} onChange={set} />
         <SelectField label="Rating" value={filter.rating} width={150} options={RATING_OPTIONS} onChange={(rating) => set({ rating })} />
         <MoreFilters filter={filter} onChange={set} regions={regionOptions.regions} islands={regionOptions.islands} />
-        <Button variant="outlined" startIcon={<ViewColumnOutlinedIcon />} onClick={(e) => setColumnsMenu(e.currentTarget)} aria-haspopup="menu" sx={{ alignSelf: { xs: "flex-start", md: "auto" } }}>
-          Columns
-        </Button>
+        <ColumnsMenu columns={columns} hidden={hidden} onToggle={toggleColumn} sx={{ alignSelf: { xs: "flex-start", md: "auto" } }} />
         {(search || (Object.keys(EMPTY_REVIEW_FILTER) as (keyof ReviewFilterState)[]).some((k) => filter[k] !== EMPTY_REVIEW_FILTER[k])) && (
           <Button
             onClick={() => {
@@ -356,11 +357,13 @@ export function ReviewsPanel({ filter, onFilterChange }: Props) {
             </Typography>
           </Stack>
           <Typography variant="body2" color="text.secondary">{open.location}</Typography>
-          <Typography sx={{ whiteSpace: "pre-wrap" }}>{open.comment ?? "(rating only, no comment)"}</Typography>
+          <Typography sx={{ whiteSpace: "pre-wrap" }}>{open.comment ? <Highlight text={open.comment} term={markComment} /> : "(rating only, no comment)"}</Typography>
           {open.reply && (
             <Box sx={{ borderLeft: 3, borderColor: "divider", pl: 1.5 }}>
               <Typography variant="caption" color="text.secondary">Owner reply</Typography>
-              <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>{open.reply}</Typography>
+              <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                <Highlight text={open.reply} term={markReply} />
+              </Typography>
             </Box>
           )}
           {open.reviewer_url && <Link href={open.reviewer_url} target="_blank" rel="noopener noreferrer" variant="body2">Google profile of the reviewer</Link>}

@@ -226,6 +226,34 @@ Everyone has to sign in again once (sessions do not carry over).
 | **Make someone an admin** | they sign up and confirm their email; then `sudo -u gbp /srv/gbp/bin/app-psql -c "update public.profiles set role = 'admin', status = 'approved', approved_at = now() where email = 'you@example.com'"` |
 | **Update Ubuntu** | automatic for security fixes (it reboots at 04:00 Manila only if one needs it). For the rest: `sudo apt update && sudo apt upgrade` now and then. |
 
+### Google Sheet mirror
+The app can keep a copy of every review in a Google Sheet: a first tab **All reviews** and **one tab per location**, each with the 18 export columns. It is off until you set it up.
+
+**Set it up (once, about 10 minutes):**
+1. Go to <https://console.cloud.google.com>, create a project (any name), then open **APIs & Services → Library**, find **Google Sheets API** and click **Enable**.
+2. Open **IAM & Admin → Service Accounts → Create service account**. Give it a name (for example `reviews-sheet`) and finish; it needs no roles. This is a robot Google account the app signs in as.
+3. Open the new service account, **Keys → Add key → Create new key → JSON**. A file downloads. Keep it private: it is a password.
+4. Create the Google Sheet (or open an existing one), click **Share**, paste the service account's email (it ends in `iam.gserviceaccount.com`, and is `client_email` in the file) and make it an **Editor**.
+5. On the server, add to `/etc/gbp-dashboard/env`:
+   ```
+   GOOGLE_SHEETS_SPREADSHEET_ID=<the long id between /d/ and /edit in the sheet's address>
+   GOOGLE_SERVICE_ACCOUNT_EMAIL=<client_email from the file>
+   GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY="<private_key from the file, exactly as written there, on one line, with its \n>"
+   ```
+6. Restart the app (`sudo systemctl restart gbp-dashboard`), open **Extraction** as an admin and press **Sync now** in the side panel. The first sync creates the tabs.
+
+**How it behaves:**
+- After an extraction saves reviews, or a location is added, edited or deleted, the panel shows **Update pending**. The 15-minute timer then writes the sheet once, after any running extraction has finished. **Sync now** writes it at once.
+- The app rewrites its own tabs completely on every sync. Do not type in them: notes, formulas, charts and pivot tables belong in tabs you add yourself (they can refer to the app's tabs). The app never changes or deletes a tab it did not create.
+- Tabs are named after the locations and follow renames. A deleted location's tab is removed at the next sync. If you delete one of the app's tabs by hand, it comes back at the next sync.
+- Everyone the sheet is shared with can read reviewer names and comments. Who that is, is decided in Google, not in the app.
+
+**If it shows an error:**
+- *"Google refused access…"*: the sheet is not shared with the service account as Editor, or the Google Sheets API is not enabled in the project.
+- *"The spreadsheet was not found…"*: `GOOGLE_SHEETS_SPREADSHEET_ID` is wrong.
+- *"Google did not accept the service account…"* or *"…key could not be read"*: the email or the private key is wrong. The key must keep its `\n` and stand in double quotes.
+- To replace a leaked key: create a new key for the service account, put it in the env file, restart, then delete the old key in Google Cloud.
+
 ### Restoring a backup
 The managed database also keeps its own daily backups and lets you take snapshots in the Lightsail console (Databases → your database → **Snapshots** / restore to a new database). That is the main safety net: take a manual snapshot **before any risky change**. To restore from the server's own dump files instead:
 

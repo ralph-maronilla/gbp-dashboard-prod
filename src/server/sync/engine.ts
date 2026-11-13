@@ -2,6 +2,7 @@ import "server-only";
 import { Prisma } from "@/generated/prisma/client";
 import { getPrisma } from "@/server/db/prisma";
 import { env } from "@/server/env";
+import { markSheetDirty } from "@/server/sheets/dirty";
 import { fetchReviewPage, type ReviewPage } from "@/server/serper/client";
 import { MIN_REQUEST_MS, SerperError, SerperTimeBudgetError } from "@/server/serper/errors";
 import type { PlaceKey } from "@/server/serper/maps-input";
@@ -426,6 +427,8 @@ export async function runSync(opts: RunSyncOptions): Promise<SyncSummary> {
       where: { id: run.id },
       data: { status: summary.status, error: summary.error, finished_at: new Date(), reviews_upserted: summary.reviews_upserted, credits_used: state.creditsUsed, credits_reserved: state.creditsUsed },
     });
+    // New or changed reviews: the Google Sheet mirror (if set up) is written at the next scheduler tick.
+    if (summary.reviews_upserted > 0) await markSheetDirty();
     return summary;
   } catch (err) {
     await prisma.sync_runs

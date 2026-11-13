@@ -5,7 +5,6 @@ import { usePathname, useSearchParams } from "next/navigation";
 import Box from "@mui/material/Box";
 import { LoadingOverlay } from "@/components/ui/loading-overlay";
 import Skeleton from "@mui/material/Skeleton";
-import Stack from "@mui/material/Stack";
 import Typography from "@mui/material/Typography";
 import { LocationsPanel } from "@/components/extraction/locations-panel";
 import { ReviewsPanel } from "@/components/extraction/reviews-panel";
@@ -21,6 +20,9 @@ function Loading() {
     </LoadingOverlay>
   );
 }
+
+/** From the full page width (1360px) up. */
+const WIDE = "@media (min-width: 1360px)";
 
 // useSearchParams needs a Suspense boundary so the page can still be prerendered.
 export default function ExtractionPage() {
@@ -66,15 +68,28 @@ function ExtractionView() {
       <Typography component="h1" sx={{ fontSize: 34, fontWeight: 700, lineHeight: 1.2, color: "brand.head", mb: 4 }}>
         Extraction
       </Typography>
-      {/* Main content and the side panel; the panel stacks below on narrow screens. */}
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "minmax(0, 1fr) minmax(320px, 360px)" }, gap: 5, alignItems: "start" }}>
-        <Stack spacing={6} sx={{ minWidth: 0 }}>
+      {/* Locations beside the side panel, Reviews full width below. On narrow screens: Locations, Reviews, then the panel. */}
+      <Box
+        sx={{
+          display: "grid",
+          gap: 5,
+          rowGap: 6,
+          alignItems: "start",
+          // The panel is 320px on narrower desktops, so the Locations toolbar keeps to one line, and 360px from 1360px up.
+          gridTemplateColumns: { xs: "minmax(0, 1fr)", lg: "minmax(0, 1fr) 320px" },
+          [WIDE]: { gridTemplateColumns: "minmax(0, 1fr) 360px" },
+          gridTemplateAreas: { xs: '"locations" "reviews" "panel"', lg: '"locations panel" "reviews reviews"' },
+        }}
+      >
+        <Box sx={{ gridArea: "locations", minWidth: 0 }}>
           <LocationsPanel role={role} canExtract={allowed} onShowReviews={showReviews} />
-          <div id="reviews">
-            <ReviewsPanel filter={filter} onFilterChange={setFilter} />
-          </div>
-        </Stack>
-        <SidePanel role={role} canExtract={allowed} status={status.data} />
+        </Box>
+        <Box id="reviews" sx={{ gridArea: "reviews", minWidth: 0 }}>
+          <ReviewsPanel filter={filter} onFilterChange={setFilter} />
+        </Box>
+        <Box sx={{ gridArea: "panel", minWidth: 0 }}>
+          <SidePanel role={role} canExtract={allowed} status={status.data} />
+        </Box>
       </Box>
     </div>
   );

@@ -1,5 +1,11 @@
 # Changelog
 
+## Google Sheet mirror of the reviews
+- Optional copy of every review in a Google Sheet: an **All reviews** tab and **one tab per location**, with the 18 export columns. Set up with a Google service account (`GOOGLE_SHEETS_SPREADSHEET_ID`, `GOOGLE_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY`); off without them. Steps in `deploy/RUNBOOK.md`.
+- Extraction that saves reviews, and adding, editing or deleting a location, mark the sheet out of date. The 15-minute scheduler call (`/api/cron/sync`) writes it once, after running extractions have finished. Admins see "Last synced", "Update pending" and **Sync now** in the Extraction side panel (`GET` / `POST /api/admin/sheet-sync`, audit action `sheet.synced`).
+- The app rewrites only the tabs it created (remembered in `app_settings.sheet_tabs`); values are written as plain text, never as formulas. No new dependency: the Sheets API is called directly.
+- Migration `20261113000000_sheet_sync`: five columns on `app_settings`.
+
 ## Self-hosted rewrite (no Supabase, Upstash or Vercel at runtime)
 Same app and behavior, new foundation: one server (Caddy + Node under systemd) and a managed PostgreSQL.
 - **Sign-in:** Better Auth runs inside the app on its own tables (`auth_user`, `auth_session`, `auth_account`, `auth_verification`); bcrypt passwords, so existing accounts keep their passwords. Email through SMTP (Nodemailer); in development the emails are printed to the log.

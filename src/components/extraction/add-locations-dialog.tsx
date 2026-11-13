@@ -10,8 +10,12 @@ import { useAddLocations, useGroups } from "@/lib/client/hooks";
 
 const MAX_LOCATIONS = 500;
 
-/** Add locations by pasting Google Maps links (or CIDs), one per line, optionally as "Name | link". Free: no credits. */
-export function AddLocationsDialog({ onClose }: { onClose: () => void }) {
+/**
+ * Add locations by pasting Google Maps links (or CIDs), one per line, optionally as "Name | link". Free: no credits.
+ * Admins file them under any client or a new one. Other people may only pick a client assigned to them; without one,
+ * what they add is assigned to them.
+ */
+export function AddLocationsDialog({ isAdmin, onClose }: { isAdmin: boolean; onClose: () => void }) {
   const groups = useGroups();
   const [client, setClient] = useState(""); // existing client name or a new one
   const [pasted, setPasted] = useState("");
@@ -49,11 +53,22 @@ export function AddLocationsDialog({ onClose }: { onClose: () => void }) {
       }}
     >
       <Autocomplete
-        freeSolo
+        freeSolo={isAdmin}
         options={(groups.data ?? []).map((g) => g.name)}
         inputValue={client}
         onInputChange={(_e, v) => setClient(v)}
-        renderInput={(p) => <TextField {...p} size="small" label="Client (pick one or type a new name)" helperText="Users assigned to this client will see these locations." />}
+        renderInput={(p) => (
+          <TextField
+            {...p}
+            size="small"
+            label={isAdmin ? "Client (pick one or type a new name)" : "Client (optional)"}
+            helperText={
+              isAdmin
+                ? "Users assigned to this client will see these locations."
+                : "Pick a client that is assigned to you, and everyone assigned to it will see these locations. Leave it empty to add them to your own list."
+            }
+          />
+        )}
       />
       {result && !add.isPending && (
         <>

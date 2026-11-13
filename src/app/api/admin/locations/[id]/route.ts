@@ -2,6 +2,7 @@ import { withAuth } from "@/server/api/with-auth";
 import { ok } from "@/server/api/response";
 import { Errors } from "@/server/api/errors";
 import { deleteLocation, nameKey, setLocationGroups } from "@/server/data/locations-admin";
+import { markSheetDirty } from "@/server/sheets/dirty";
 import { locationIdParamsSchema, updateLocationSchema } from "@/lib/schemas/export";
 import { Prisma } from "@/generated/prisma/client";
 
@@ -38,6 +39,7 @@ export const PATCH = withAuth(
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") throw Errors.conflict("Another location already has this name");
         throw err;
       });
+    await markSheetDirty(); // the name, branch prefix, address, type, region and clients all appear in the Google Sheet
     return ok(result);
   },
 );
@@ -46,6 +48,8 @@ export const PATCH = withAuth(
 export const DELETE = withAuth(
   { roles: ["admin"], params: locationIdParamsSchema, rateLimit: { key: "admin-delete-location", limit: 10, windowSec: 60 } },
   async ({ ctx, params }) => {
-    return ok(await deleteLocation(params.id, ctx.profile.id));
+    const deleted = await deleteLocation(params.id, ctx.profile.id);
+    await markSheetDirty(); // its tab and rows leave the Google Sheet
+    return ok(deleted);
   },
 );

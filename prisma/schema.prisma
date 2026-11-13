@@ -170,6 +170,12 @@ model app_settings {
   auto_last_run_on          DateTime? @db.Date
   auto_last_run_at          DateTime? @db.Timestamptz(6)
   scheduler_last_tick_at    DateTime? @db.Timestamptz(6)
+  // Google Sheet mirror of the reviews (src/server/sheets; migration sheet_sync).
+  sheet_dirty_at            DateTime? @db.Timestamptz(6)
+  sheet_synced_at           DateTime? @db.Timestamptz(6)
+  sheet_rows                Int?
+  sheet_sync_error          String?
+  sheet_tabs                Json?
   updated_by                String?   @db.Uuid
   updated_at                DateTime  @default(now()) @db.Timestamptz(6)
 }

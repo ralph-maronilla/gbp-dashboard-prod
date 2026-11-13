@@ -11,27 +11,30 @@ import Switch from "@mui/material/Switch";
 import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
-import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
 import StopIcon from "@mui/icons-material/Stop";
-import { DataGrid, type GridColDef, type GridRowSelectionModel } from "@mui/x-data-grid";
+import { DataGrid, type GridColDef, type GridColumnVisibilityModel, type GridRowSelectionModel } from "@mui/x-data-grid";
 import { useAutofillRegions, useExtractLocations, useGroups, useUpdateLocation } from "@/lib/client/hooks";
+import { useStoredString } from "@/lib/client/stored";
 import { useExtractionRunner } from "@/lib/client/use-extraction-runner";
+import { radius } from "@/lib/design-tokens";
 import { formatRelative } from "@/lib/format";
 import type { Role } from "@/lib/schemas/common";
 import type { ExtractLocationRow, ExtractState } from "@/lib/schemas/extract";
 import { BRANCH_PREFIX_MAX } from "@/lib/schemas/export";
 import { GRID_LOADING_PROPS, LoadingOverlay } from "@/components/ui/loading-overlay";
 import { RetryAlert } from "@/components/ui/retry-alert";
+import { ColumnsMenu } from "@/components/ui/columns-menu";
 import { SelectField, groupOptions } from "@/components/ui/select-field";
 import { StatusDot, type StatusTone } from "@/components/ui/status-dot";
 import { AddLocationsDialog } from "./add-locations-dialog";
 import { DeleteLocationDialog } from "./delete-location-dialog";
 import { EditLocationDialog } from "./edit-location-dialog";
 import { GoogleRefreshDialog } from "./google-refresh-dialog";
-import { PLAIN_GRID_PROPS, STRONG_CELL, gridScrollSx, plainGridSx } from "./grid-styles";
+import { DONE_ROW, PLAIN_GRID_PROPS, STRONG_CELL, gridScrollSx, plainGridSx } from "./grid-styles";
+import { SelectionBar } from "./selection-bar";
 
 /** Status as a dot and label: teal for "Up to date", the signal colors for the rest. */
 const STATE: Record<ExtractState, { label: string; tone: StatusTone }> = {
@@ -42,6 +45,17 @@ const STATE: Record<ExtractState, { label: string; tone: StatusTone }> = {
   up_to_date: { label: "Up to date", tone: "ok" },
   error: { label: "Error", tone: "error" },
 };
+
+/** The order the status filter lists the states in. */
+const STATE_ORDER: ExtractState[] = ["up_to_date", "extracting", "catching_up", "backfilling", "never", "error"];
+
+/** Table columns hidden in this browser; Type, Branch prefix and Address start hidden. Location and the row actions always show. */
+const HIDDEN_KEY = "locations-table-hidden";
+const DEFAULT_HIDDEN = "location_type,branch_prefix,address";
+const ALWAYS_SHOWN = new Set(["name", "actions"]);
+
+/** Toolbar buttons: a little narrower than the default, and never wrapping their label. */
+const TOOL = { px: 1.75, whiteSpace: "nowrap", flexShrink: 0 } as const;
 
 const EMPTY_SELECTION: GridRowSelectionModel = { type: "include", ids: new Set() };
 
@@ -68,8 +82,13 @@ export function LocationsPanel({ role, canExtract, onShowReviews }: Props) {
   const [editError, setEditError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<{ ids: string[] | undefined; label: string } | null>(null);
   const autofill = useAutofillRegions();
+  const [stateFilter, setStateFilter] = useState<ExtractState | null>(null);
+  const [hiddenStored, setHidden] = useStoredString(HIDDEN_KEY);
+  // The locations that were already up to date when the running extraction started: the others flash when they finish.
+  const [doneBefore, setDoneBefore] = useState<Set<string>>(new Set());
 
-  const rows = useMemo(() => {
+  // After Search and Client; the status filter counts and then narrows these.
+  const matching = useMemo(() => {
     const term = search.trim().toLowerCase();
     return (locations.data ?? []).filter(
       (l) =>
@@ -77,31 +96,41 @@ export function LocationsPanel({ role, canExtract, onShowReviews }: Props) {
         (!term || l.name.toLowerCase().includes(term) || (l.address ?? "").toLowerCase().includes(term) || (l.branch_prefix ?? "").toLowerCase().includes(term)),
     );
   }, [locations.data, clientId, search]);
+  const stateCounts = useMemo(() => {
+    const counts = new Map<ExtractState, number>();
+    for (const l of matching) counts.set(l.state, (counts.get(l.state) ?? 0) + 1);
+    return STATE_ORDER.filter((s) => counts.has(s)).map((s) => ({ state: s, count: counts.get(s)! }));
+  }, [matching]);
+  // A status with no locations left (they finished extracting) stops filtering instead of showing an empty table.
+  const activeState = stateFilter && stateCounts.some((c) => c.state === stateFilter) ? stateFilter : null;
+  const rows = useMemo(() => (activeState ? matching.filter((l) => l.state === activeState) : matching), [matching, activeState]);
+  const filtered = Boolean(clientId || search || activeState);
 
   const selectedIds = [...selection.ids].map(String).filter((id) => rows.some((r) => r.id === id));
   const activeVisible = rows.filter((r) => r.is_active).map((r) => r.id);
+
+  const extract = (ids: string[] | undefined) => {
+    setDoneBefore(new Set((locations.data ?? []).filter((l) => l.state === "up_to_date").map((l) => l.id)));
+    void start(ids);
+  };
+  const refreshTotals = () =>
+    setRefreshing(
+      selectedIds.length > 0
+        ? { ids: selectedIds, label: `the ${selectedIds.length} selected location${selectedIds.length === 1 ? "" : "s"}` }
+        : filtered
+          ? { ids: rows.map((r) => r.id), label: `these ${rows.length} locations` }
+          : { ids: undefined, label: `all ${rows.length} locations` },
+    );
 
   const columns = useMemo<GridColDef<ExtractLocationRow>[]>(
     () => [
       { field: "name", headerName: "Location", flex: 1.2, minWidth: 200, editable: isAdmin, cellClassName: STRONG_CELL },
       {
-        field: "clients",
-        headerName: "Client",
-        flex: 0.8,
-        minWidth: 140,
-        sortable: false,
-        valueGetter: (_v, row) => row.clients.map((c) => c.name).join(", "),
-      },
-      { field: "region", headerName: "Region", width: 110, valueFormatter: (v: string | null) => v ?? "", description: "Philippine region code (set in Edit)" },
-      { field: "location_type", headerName: "Type", width: 110, valueFormatter: (v: string | null) => v ?? "" },
-      { field: "branch_prefix", headerName: "Branch prefix", width: 130, editable: isAdmin, valueFormatter: (v: string | null) => v ?? "" },
-      { field: "address", headerName: "Address", flex: 1, minWidth: 180, editable: isAdmin, valueFormatter: (v: string | null) => v ?? "" },
-      {
         field: "state",
         headerName: "Status",
         width: 150,
         renderCell: ({ row }) => {
-          const status = <StatusDot tone={STATE[row.state].tone} label={STATE[row.state].label} />;
+          const status = <StatusDot tone={STATE[row.state].tone} label={STATE[row.state].label} pulse={row.state === "extracting"} />;
           return row.last_error ? <Tooltip title={row.last_error}>{status}</Tooltip> : status;
         },
       },
@@ -115,6 +144,7 @@ export function LocationsPanel({ role, canExtract, onShowReviews }: Props) {
           </Button>
         ),
       },
+      { field: "last_synced_at", headerName: "Last extracted", width: 130, valueFormatter: (v: string | null) => formatRelative(v) },
       {
         field: "google_rating",
         headerName: "Google",
@@ -131,7 +161,18 @@ export function LocationsPanel({ role, canExtract, onShowReviews }: Props) {
             ""
           ),
       },
-      { field: "last_synced_at", headerName: "Last extracted", width: 130, valueFormatter: (v: string | null) => formatRelative(v) },
+      {
+        field: "clients",
+        headerName: "Client",
+        flex: 0.8,
+        minWidth: 140,
+        sortable: false,
+        valueGetter: (_v, row) => row.clients.map((c) => c.name).join(", "),
+      },
+      { field: "region", headerName: "Region", width: 110, valueFormatter: (v: string | null) => v ?? "", description: "Philippine region code (set in Edit)" },
+      { field: "location_type", headerName: "Type", width: 110, valueFormatter: (v: string | null) => v ?? "" },
+      { field: "branch_prefix", headerName: "Branch prefix", width: 130, editable: isAdmin, valueFormatter: (v: string | null) => v ?? "" },
+      { field: "address", headerName: "Address", flex: 1, minWidth: 180, editable: isAdmin, valueFormatter: (v: string | null) => v ?? "" },
       ...(isAdmin
         ? [
             {
@@ -173,10 +214,20 @@ export function LocationsPanel({ role, canExtract, onShowReviews }: Props) {
     [isAdmin, update, onShowReviews],
   );
 
+  const hidden = new Set((hiddenStored ?? DEFAULT_HIDDEN).split(",").filter(Boolean));
+  const visibility: GridColumnVisibilityModel = Object.fromEntries(columns.map((c) => [c.field, !hidden.has(c.field)]));
+  const toggleColumn = (field: string) => {
+    const next = new Set(hidden);
+    if (next.has(field)) next.delete(field);
+    else next.add(field);
+    setHidden([...next].join(","));
+  };
+  const showBar = canExtract && selectedIds.length > 0 && !progress.running;
+
   const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
 
   return (
-    <section aria-labelledby="locations-heading">
+    <Box component="section" aria-labelledby="locations-heading" sx={{ pb: showBar ? 9 : 0 }}>
       <Stack direction={{ xs: "column", sm: "row" }} spacing={2} sx={{ mb: 2.5, alignItems: { sm: "center" }, justifyContent: "space-between" }}>
         <Typography id="locations-heading" component="h2" sx={{ fontSize: 20, fontWeight: 600, color: "brand.head" }}>
           Locations{" "}
@@ -195,10 +246,10 @@ export function LocationsPanel({ role, canExtract, onShowReviews }: Props) {
             ) : (
               <>
                 {/* The one orange action on this screen. */}
-                <Button variant="contained" color="accent" disabled={activeVisible.length === 0} onClick={() => start(clientId || search ? activeVisible : undefined)}>
-                  Extract {clientId || search ? `these ${activeVisible.length}` : "all"}
+                <Button variant="contained" color="accent" disabled={activeVisible.length === 0} onClick={() => extract(filtered ? activeVisible : undefined)}>
+                  Extract {filtered ? `these ${activeVisible.length}` : "all"}
                 </Button>
-                <Button variant="contained" startIcon={<PlayArrowIcon />} disabled={selectedIds.length === 0} onClick={() => start(selectedIds)}>
+                <Button variant="contained" startIcon={<PlayArrowIcon />} disabled={selectedIds.length === 0} onClick={() => extract(selectedIds)}>
                   Extract selected ({selectedIds.length})
                 </Button>
               </>
@@ -207,40 +258,69 @@ export function LocationsPanel({ role, canExtract, onShowReviews }: Props) {
         )}
       </Stack>
 
-      <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} useFlexGap sx={{ mb: 2, flexWrap: "wrap" }}>
-        <TextField size="small" label="Search" value={search} onChange={(e) => setSearch(e.target.value)} sx={{ minWidth: 200 }} />
-        {isAdmin && (
-          <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setAdding(true)}>
+      {/* Search and Client on the left; on the right Add locations and Refresh Google totals (anyone who may extract) and Auto-fill regions (admins). */}
+      <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} useFlexGap sx={{ mb: 2, flexWrap: "wrap", alignItems: { md: "center" } }}>
+        <TextField size="small" label="Search" value={search} onChange={(e) => setSearch(e.target.value)} sx={{ flex: { md: "1 1 96px" }, minWidth: { md: 96 }, maxWidth: { md: 200 } }} />
+        <SelectField label="Client" value={clientId} width={140} options={groupOptions(groups.data, "All clients")} onChange={setClientId} />
+        <Box sx={{ flexGrow: 1, display: { xs: "none", md: "block" } }} />
+        {canExtract && (
+          <Button variant="outlined" onClick={() => setAdding(true)} sx={TOOL}>
             Add locations
           </Button>
         )}
-        {isAdmin && (
-          <Button
-            variant="outlined"
-            onClick={() =>
-              setRefreshing(
-                selectedIds.length > 0
-                  ? { ids: selectedIds, label: `the ${selectedIds.length} selected location${selectedIds.length === 1 ? "" : "s"}` }
-                  : clientId || search
-                    ? { ids: rows.map((r) => r.id), label: `these ${rows.length} locations` }
-                    : { ids: undefined, label: `all ${rows.length} locations` },
-              )
-            }
-            disabled={rows.length === 0}
-          >
+        {canExtract && (
+          <Button variant="outlined" onClick={refreshTotals} disabled={rows.length === 0} sx={TOOL}>
             Refresh Google totals{selectedIds.length > 0 ? ` (${selectedIds.length})` : ""}
           </Button>
         )}
         {isAdmin && (
           <Tooltip title="Sets empty regions from each location's address or name. Free.">
             <span>
-              <Button variant="outlined" onClick={() => autofill.mutate()} disabled={autofill.isPending} sx={{ width: { xs: "100%", md: "auto" } }}>
+              <Button variant="outlined" onClick={() => autofill.mutate()} disabled={autofill.isPending} sx={{ ...TOOL, width: { xs: "100%", md: "auto" } }}>
                 {autofill.isPending ? "Filling…" : "Auto-fill regions"}
               </Button>
             </span>
           </Tooltip>
         )}
-        <SelectField label="Client" value={clientId} width={180} options={groupOptions(groups.data, "All clients")} onChange={setClientId} />
+      </Stack>
+
+      {/* Locations per status (clicking one shows only those), and the column chooser on the right. */}
+      <Stack direction="row" sx={{ mb: 1, alignItems: "center", gap: 1 }}>
+        <Stack direction="row" useFlexGap role="group" aria-label="Filter by status" sx={{ flexWrap: "wrap", gap: 1, flexGrow: 1 }}>
+          {stateCounts.length > 1 && stateCounts.map(({ state, count }) => {
+            const on = activeState === state;
+            return (
+              <Box
+                key={state}
+                component="button"
+                type="button"
+                aria-pressed={on}
+                onClick={() => setStateFilter(on ? null : state)}
+                sx={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 1,
+                  minHeight: 36,
+                  px: 1.5,
+                  font: "inherit",
+                  fontSize: 13,
+                  color: "text.primary",
+                  cursor: "pointer",
+                  bgcolor: on ? "action.selected" : "transparent",
+                  border: 1,
+                  borderColor: on ? "brand.primaryText" : "divider",
+                  borderRadius: `${radius.pill}px`,
+                  "&:hover": { borderColor: "text.secondary" },
+                  "&:focus-visible": { outline: (t) => `2px solid ${t.palette.brand.primaryText}`, outlineOffset: 2 },
+                }}
+              >
+                <StatusDot tone={STATE[state].tone} label={STATE[state].label} />
+                <span>{count}</span>
+              </Box>
+            );
+          })}
+        </Stack>
+        <ColumnsMenu iconOnly columns={columns.filter((c) => !ALWAYS_SHOWN.has(c.field))} hidden={hidden} onToggle={toggleColumn} />
       </Stack>
 
       {canExtract && (progress.running || progress.message || progress.error) && (
@@ -287,6 +367,8 @@ export function LocationsPanel({ role, canExtract, onShowReviews }: Props) {
           sx={plainGridSx}
           rows={rows}
           columns={columns}
+          columnVisibilityModel={visibility}
+          getRowClassName={({ row }) => (progress.running && row.state === "up_to_date" && !doneBefore.has(row.id) ? DONE_ROW : "")}
           loading={locations.isPending}
           checkboxSelection={canExtract}
           rowSelectionModel={selection}
@@ -296,7 +378,7 @@ export function LocationsPanel({ role, canExtract, onShowReviews }: Props) {
           disableColumnMenu
           pageSizeOptions={[10, 25, 50, 100]}
           initialState={{ pagination: { paginationModel: { pageSize: 10 } } }}
-          localeText={{ noRowsLabel: isAdmin ? "No locations yet. Click Add locations." : "No locations assigned to you yet." }}
+          localeText={{ noRowsLabel: isAdmin ? "No locations yet. Click Add locations." : canExtract ? "No locations assigned to you yet. Click Add locations to add one." : "No locations assigned to you yet." }}
           processRowUpdate={async (next, prev) => {
             const input: { name?: string; address?: string | null; branch_prefix?: string | null } = {};
             const name = String(next.name ?? "").trim();
@@ -319,7 +401,7 @@ export function LocationsPanel({ role, canExtract, onShowReviews }: Props) {
         </Box>
         </LoadingOverlay>
       )}
-      {adding && <AddLocationsDialog onClose={() => setAdding(false)} />}
+      {adding && <AddLocationsDialog isAdmin={isAdmin} onClose={() => setAdding(false)} />}
       {refreshing && <GoogleRefreshDialog ids={refreshing.ids} label={refreshing.label} onClose={() => setRefreshing(null)} />}
       {editing && <EditLocationDialog location={editing} onClose={() => setEditing(null)} />}
       {deleting && (
@@ -329,6 +411,14 @@ export function LocationsPanel({ role, canExtract, onShowReviews }: Props) {
           onDeleted={(id) => setSelection((sel) => ({ ...sel, ids: new Set([...sel.ids].filter((x) => x !== id)) }))}
         />
       )}
-    </section>
+      {showBar && (
+        <SelectionBar
+          count={selectedIds.length}
+          onExtract={() => extract(selectedIds)}
+          onRefresh={refreshTotals}
+          onClear={() => setSelection(EMPTY_SELECTION)}
+        />
+      )}
+    </Box>
   );
 }
